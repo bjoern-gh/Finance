@@ -1,0 +1,8 @@
+pandas
+yfinance
+configparser
+tqdm
+pytest
+pytest-mock
+black
+flake8
