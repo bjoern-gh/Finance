@@ -50,7 +50,8 @@ def main():
                 "SMA",
                 "KGV",
                 "Trend",
-                "ATH/ATL", # Added the new metric here
+                "ATH/ATL",
+                "Valuation", # Added the new metric here
             ]
             if INCLUDE_DIVIDEND_YIELD:
                 display_cols.append("Dividendenrendite (%)")

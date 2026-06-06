@@ -32,6 +32,11 @@ SORT_BY_COLUMN = config.get("General", "sort_by_column")
 SORT_ASCENDING = config.getboolean("General", "sort_ascending")
 ATH_ATL_THRESHOLD_PERCENT = config.getint("General", "ath_atl_threshold_percent")
 
+# Neue Bewertungs-Einstellungen
+PE_CHEAP_THRESHOLD = config.getfloat("General", "pe_cheap_threshold")
+PE_EXPENSIVE_THRESHOLD = config.getfloat("General", "pe_expensive_threshold")
+PEG_MAX_THRESHOLD = config.getfloat("General", "peg_max_threshold")
+
 
 # Metrik-Einstellungen
 INCLUDE_DIVIDEND_YIELD = config.getboolean("Metrics", "include_dividend_yield")
@@ -92,6 +97,7 @@ def get_financial_metrics(ticker_tuple):
     original_ticker, yahoo_ticker_symbol = ticker_tuple
     company_name = "N/A"  # Initialisiere Firmenname für Fehlerfälle
     ath_atl_status = "N/A" # Initialisiere für All-Time High/Low Status
+    valuation_status = "N/A" # Initialisiere für Bewertungsstatus
 
     for attempt in range(RETRIES):
         try:
@@ -118,6 +124,7 @@ def get_financial_metrics(ticker_tuple):
                     "KGV": pd.NA,
                     "Trend": "N/A",
                     "ATH/ATL": "N/A", # Neuer Metrik-Platzhalter
+                    "Valuation": "N/A", # Neuer Metrik-Platzhalter
                     "Status": "Keine/unzureichende Daten (Delisted? Falsches Symbol?)",
                 }
 
@@ -154,6 +161,33 @@ def get_financial_metrics(ticker_tuple):
                 else:
                     ath_atl_status = "Normal"
             # --- Ende All-Time High/Low Berechnung ---
+
+            # --- Bewertungs-Metrik (Valuation) ---
+            if isinstance(pe_v, (int, float)):
+                if pe_v <= PE_CHEAP_THRESHOLD:
+                    valuation_status = "Günstig"
+                elif pe_v >= PE_EXPENSIVE_THRESHOLD:
+                    valuation_status = "Teuer"
+                else:
+                    valuation_status = "Fair"
+                
+                # PEG Ratio für zusätzliche Bewertung
+                earnings_growth = info.get('earningsGrowth') # Annual EPS growth
+                if earnings_growth is not None and earnings_growth > 0:
+                    peg_v = pe_v / (earnings_growth * 100) # Convert growth to percentage
+                    if peg_v <= PEG_MAX_THRESHOLD:
+                        if valuation_status == "Günstig":
+                            valuation_status = "Sehr Günstig (PEG)"
+                        elif valuation_status == "Fair":
+                            valuation_status = "Fair (PEG)"
+                    else:
+                        if valuation_status == "Günstig":
+                            valuation_status = "Günstig (Hoher PEG)"
+                        elif valuation_status == "Fair":
+                            valuation_status = "Fair (Hoher PEG)"
+                        elif valuation_status == "Teuer":
+                            valuation_status = "Sehr Teuer (Hoher PEG)"
+            # --- Ende Bewertungs-Metrik ---
 
 
             # Zusätzliche Metriken
@@ -196,6 +230,7 @@ def get_financial_metrics(ticker_tuple):
                 "KGV": round(pe_v, 2) if isinstance(pe_v, (int, float)) else "N/A",
                 "Trend": trend,
                 "ATH/ATL": ath_atl_status, # Neuer Metrik-Wert
+                "Valuation": valuation_status, # Neuer Bewertungs-Wert
                 "Status": "OK",  # Erfolgreiche Abfrage
             }
             if INCLUDE_DIVIDEND_YIELD:
@@ -221,6 +256,7 @@ def get_financial_metrics(ticker_tuple):
                     "KGV": pd.NA,
                     "Trend": "N/A",
                     "ATH/ATL": "N/A", # Neuer Metrik-Platzhalter bei Fehler
+                    "Valuation": "N/A", # Neuer Bewertungs-Platzhalter bei Fehler
                     "Status": f"Fehler nach {RETRIES} Versuchen: {str(e)}",
                 }
     return {  # Fallback, sollte nicht erreicht werden
@@ -232,6 +268,7 @@ def get_financial_metrics(ticker_tuple):
         "KGV": pd.NA,
         "Trend": "N/A",
         "ATH/ATL": "N/A", # Neuer Metrik-Platzhalter bei Fehler
+        "Valuation": "N/A", # Neuer Bewertungs-Platzhalter bei Fehler
         "Status": "Unbekannter Fehler",
     }
 

@@ -108,6 +108,7 @@ if st.button("Analyse starten"):
                     "KGV",
                     "Trend",
                     "ATH/ATL",
+                    "Valuation", # Added the new metric here
                 ]
                 if INCLUDE_DIVIDEND_YIELD:
                     display_cols.append("Dividendenrendite (%)")
@@ -127,7 +128,7 @@ if st.button("Analyse starten"):
                 existing_error_cols = [
                     col for col in error_cols if col in failed_df.columns
                 ]
-                st.dataframe(failed_df[existing_cols], use_container_width=True) # Use existing_cols for failed_df as well
+                st.dataframe(failed_df[existing_error_cols], use_container_width=True)
                 st.warning(f"({len(failed_df)} Ticker konnten nicht geladen werden.)")
         else:
             st.error("Keine Daten gefunden oder Fehler bei allen Abfragen.")
