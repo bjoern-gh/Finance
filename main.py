@@ -1,6 +1,7 @@
 import configparser
 import logging
-from financial_analyzer import analyze_tickers, parse_and_convert_tickers  # Importiere die Hauptanalysefunktion und den Parser
+# Importiere die Hauptanalysefunktion und den Parser
+from financial_analyzer import analyze_tickers, parse_and_convert_tickers
 
 # --- Konfiguration des Loggers ---
 # Der Logger wird bereits in financial_analyzer.py konfiguriert.
@@ -51,7 +52,7 @@ def main():
                 "KGV",
                 "Trend",
                 "ATH/ATL",
-                "Valuation", # Added the new metric here
+                "Valuation",  # Added the new metric here
             ]
             if INCLUDE_DIVIDEND_YIELD:
                 display_cols.append("Dividendenrendite (%)")

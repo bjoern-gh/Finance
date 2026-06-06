@@ -1,7 +1,6 @@
 import streamlit as st
 import configparser
-import yfinance as yf # Import yfinance for plain ticker lookup
-import pandas as pd # Import pandas for DataFrame operations
+import yfinance as yf  # Import yfinance for plain ticker lookup
 
 # Importiere die Analysefunktion aus unserem Modul
 from financial_analyzer import analyze_tickers, parse_and_convert_tickers
@@ -20,6 +19,7 @@ st.set_page_config(layout="wide", page_title="Finanzanalyse-App")
 
 st.title("📈 Finanzanalyse-App")
 st.markdown("Analysiere Finanz-Ticker und erhalte Kennzahlen von Yahoo Finance.")
+
 
 # Helper function to process plain tickers
 def process_plain_tickers(plain_tickers_string):
@@ -60,7 +60,7 @@ with col1:
 with col2:
     user_plain_tickers = st.text_area(
         "Geben Sie einfache Ticker-Symbole ein (z.B. AAPL, MSFT)",
-        value="", # Default empty for plain tickers
+        value="",  # Default empty for plain tickers
         height=150,
         key="plain_tickers"
     )
@@ -108,7 +108,7 @@ if st.button("Analyse starten"):
                     "KGV",
                     "Trend",
                     "ATH/ATL",
-                    "Valuation", # Added the new metric here
+                    "Valuation",  # Added the new metric here
                 ]
                 if INCLUDE_DIVIDEND_YIELD:
                     display_cols.append("Dividendenrendite (%)")
@@ -132,9 +132,11 @@ if st.button("Analyse starten"):
                 st.warning(f"({len(failed_df)} Ticker konnten nicht geladen werden.)")
         else:
             st.error("Keine Daten gefunden oder Fehler bei allen Abfragen.")
-        
         if unresolved_plain_tickers_display:
-            st.warning(f"Folgende einfache Ticker konnten nicht aufgelöst werden: {', '.join(unresolved_plain_tickers_display)}")
+            unresolved_list = ", ".join(unresolved_plain_tickers_display)
+            st.warning(
+                f"Folgende einfache Ticker konnten nicht aufgelöst werden: {unresolved_list}"
+            )
 
 
 st.markdown("---")
