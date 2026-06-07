@@ -4,5 +4,4 @@ configparser
 tqdm
 pytest
 pytest-mock
-black
-flake8
+ruff
