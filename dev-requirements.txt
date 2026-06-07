@@ -2,4 +2,7 @@ pandas
 yfinance
 configparser
 tqdm
-streamlit
+pytest
+pytest-mock
+black
+flake8
