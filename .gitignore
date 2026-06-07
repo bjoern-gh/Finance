@@ -1,0 +1,16 @@
+# IDE-specific files
+Finance.iml
+.idea/modules.xml
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+
+# Jupyter Notebook
+.ipynb_checkpoints
