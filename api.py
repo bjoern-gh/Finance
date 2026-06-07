@@ -37,7 +37,7 @@ async def analyze_financial_data(
         None,
         description="Comma-separated list of ticker symbols to analyze (e.g., 'FRA:RWE,ETR:SAP'). "
         "If not provided, uses the default list from config.ini.",
-    )
+    ),
 ):
     """
     Analysiert eine Liste von Finanz-Tickern und gibt die berechneten Kennzahlen zurück.

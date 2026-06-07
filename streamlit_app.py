@@ -28,14 +28,16 @@ def process_plain_tickers(plain_tickers_string):
     if not plain_tickers_string:
         return resolved_tickers, unresolved_plain_tickers
 
-    plain_tickers_list = [t.strip().upper() for t in plain_tickers_string.split(',') if t.strip()]
+    plain_tickers_list = [
+        t.strip().upper() for t in plain_tickers_string.split(",") if t.strip()
+    ]
 
     for ticker_symbol in plain_tickers_list:
         try:
             ticker = yf.Ticker(ticker_symbol)
             info = ticker.info
             # Check if the ticker actually exists and has a longName
-            if info and info.get('longName'):
+            if info and info.get("longName"):
                 resolved_tickers.append((ticker_symbol, ticker_symbol))
             else:
                 unresolved_plain_tickers.append(ticker_symbol)
@@ -54,7 +56,7 @@ with col1:
         "Geben Sie Ticker-Symbole mit Präfix ein (z.B. FRA:RWE,ETR:SAP)",
         value=DEFAULT_RAW_DATA.replace(",", ",\n"),
         height=150,
-        key="prefixed_tickers"
+        key="prefixed_tickers",
     )
 
 with col2:
@@ -62,7 +64,7 @@ with col2:
         "Geben Sie einfache Ticker-Symbole ein (z.B. AAPL, MSFT)",
         value="",  # Default empty for plain tickers
         height=150,
-        key="plain_tickers"
+        key="plain_tickers",
     )
 
 
@@ -73,9 +75,11 @@ if st.button("Analyse starten"):
 
     # Process prefixed tickers
     if user_prefixed_tickers.strip():
-        all_ticker_tuples.extend(parse_and_convert_tickers(
-            user_prefixed_tickers.replace(",\n", ",").replace("\n", ",")
-        ))
+        all_ticker_tuples.extend(
+            parse_and_convert_tickers(
+                user_prefixed_tickers.replace(",\n", ",").replace("\n", ",")
+            )
+        )
 
     # Process plain tickers
     if user_plain_tickers.strip():

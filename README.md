@@ -9,8 +9,10 @@ This project provides a financial analysis application that fetches stock data u
 *   `api.py`: (Assumed) Contains API-related functionalities.
 *   `streamlit_app.py`: The Streamlit application for interactive analysis.
 *   `config.ini`: Configuration file for various application settings.
-*   `requirements.txt`: Lists all Python dependencies.
+*   `requirements.txt`: Lists core Python dependencies for the application.
+*   `dev-requirements.txt`: Lists development dependencies like testing and linting tools.
 *   `tests/`: Directory containing unit tests for the project.
+*   `Dockerfile`: Instructions for building a Docker image of the application.
 
 ## Setup
 
@@ -37,12 +39,17 @@ To set up the project, follow these steps:
         .venv\Scripts\activate
         ```
 
-4.  **Install dependencies:**
+4.  **Install core dependencies:**
     ```bash
     pip install -r requirements.txt
     ```
 
-5.  **Configure `config.ini`:**
+5.  **Install development dependencies (optional, for testing and linting):**
+    ```bash
+    pip install -r dev-requirements.txt
+    ```
+
+6.  **Configure `config.ini`:**
     Ensure your `config.ini` file is properly configured with the necessary settings, such as `RAW_DATA` (your ticker list), `SMA_PERIOD`, `KGV_MAX_THRESHOLD`, etc. An example `config.ini` might look like this:
 
     ```ini
@@ -99,7 +106,7 @@ Unit tests are implemented using `pytest`. To run the tests:
 
 ## Code Quality
 
-This project uses `black` for code formatting and `flake8` for linting to ensure consistent code style and identify potential issues.
+This project uses `black` for code formatting and `ruff` for linting to ensure consistent code style and identify potential issues.
 
 ### Format Code
 
@@ -114,5 +121,30 @@ black .
 To check your code for style and quality issues:
 
 ```bash
-flake8 .
+ruff check .
 ```
+
+### Auto-fix Linting Issues
+
+To automatically fix some linting issues:
+
+```bash
+ruff check . --fix
+```
+
+## Deployment with Docker
+
+To build and run the application using Docker:
+
+1.  **Build the Docker Image:**
+    ```bash
+    docker build -t finance-app .
+    ```
+
+2.  **Run the Docker Container (for Streamlit app):**
+    ```bash
+    docker run -p 8501:8501 finance-app
+    ```
+    Then open your web browser to `http://localhost:8501`.
+
+    *(To run the console app instead, modify the `CMD` instruction in the `Dockerfile` to `CMD ["python", "main.py"]`)*

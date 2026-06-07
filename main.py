@@ -1,5 +1,6 @@
 import configparser
 import logging
+
 # Importiere die Hauptanalysefunktion und den Parser
 from financial_analyzer import analyze_tickers, parse_and_convert_tickers
 

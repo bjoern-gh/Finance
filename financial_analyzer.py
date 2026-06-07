@@ -87,15 +87,6 @@ def parse_and_convert_tickers(data_string):
     return converted_tickers
 
 
-def _get_ticker_info_and_history(yahoo_ticker_symbol, history_period):
-    """Fetches ticker info and historical data."""
-    ticker = yf.Ticker(yahoo_ticker_symbol)
-    info = ticker.info
-    hist_short = ticker.history(period=history_period)
-    hist_max = ticker.history(period="max")
-    return ticker, info, hist_short, hist_max
-
-
 def _calculate_sma_value(hist_short, sma_period):
     """Calculates the Simple Moving Average."""
     if hist_short.empty or len(hist_short) < sma_period:
@@ -106,17 +97,19 @@ def _calculate_sma_value(hist_short, sma_period):
 
 def _calculate_pe_ratio(info, curr_p):
     """Calculates the Price-to-Earnings ratio."""
+    if pd.isna(curr_p):  # If current price is NA, PE cannot be calculated
+        return pd.NA
     pe_v = info.get("trailingPE") or info.get("forwardPE")
     if pe_v is None or pe_v == "None":
         eps = info.get("trailingEps")
-        pe_v = curr_p / eps if (eps and eps != 0) else "N/A"
+        pe_v = curr_p / eps if (eps and eps != 0) else pd.NA
     return pe_v
 
 
 def _determine_ath_atl_status(hist_max, curr_p, ath_atl_threshold_percent):
     """Determines if the current price is near All-Time High/Low."""
     ath_atl_status = "N/A"
-    if not hist_max.empty:
+    if not hist_max.empty and not pd.isna(curr_p):  # Added pd.isna(curr_p) check
         all_time_high = hist_max["High"].max()
         all_time_low = hist_max["Low"].min()
 
@@ -132,10 +125,14 @@ def _determine_ath_atl_status(hist_max, curr_p, ath_atl_threshold_percent):
     return ath_atl_status
 
 
-def _determine_valuation_status(pe_v, info, pe_cheap_threshold, pe_expensive_threshold, peg_max_threshold):
+def _determine_valuation_status(
+    pe_v, info, pe_cheap_threshold, pe_expensive_threshold, peg_max_threshold
+):
     """Determines the valuation status based on P/E and PEG ratios."""
     valuation_status = "N/A"
-    if isinstance(pe_v, (int, float)):
+    if isinstance(pe_v, (int, float)) and not pd.isna(
+        pe_v
+    ):  # Added pd.isna(pe_v) check
         if pe_v <= pe_cheap_threshold:
             valuation_status = "Günstig"
         elif pe_v >= pe_expensive_threshold:
@@ -143,7 +140,7 @@ def _determine_valuation_status(pe_v, info, pe_cheap_threshold, pe_expensive_thr
         else:
             valuation_status = "Fair"
 
-        earnings_growth = info.get('earningsGrowth')  # Annual EPS growth
+        earnings_growth = info.get("earningsGrowth")  # Annual EPS growth
         if earnings_growth is not None and earnings_growth > 0:
             peg_v = pe_v / (earnings_growth * 100)  # Convert growth to percentage
             if peg_v <= peg_max_threshold:
@@ -163,13 +160,13 @@ def _determine_valuation_status(pe_v, info, pe_cheap_threshold, pe_expensive_thr
 
 def _get_optional_metrics(info, include_dividend_yield, include_market_cap):
     """Fetches and formats optional metrics like dividend yield and market cap."""
-    dividend_yield = "N/A"
+    dividend_yield = pd.NA
     if include_dividend_yield:
         div_yield = info.get("dividendYield")
         if div_yield is not None:
             dividend_yield = round(div_yield * 100, 2)  # In Prozent
 
-    market_cap = "N/A"
+    market_cap = pd.NA
     if include_market_cap:
         mkt_cap = info.get("marketCap")
         if mkt_cap is not None:
@@ -179,21 +176,21 @@ def _get_optional_metrics(info, include_dividend_yield, include_market_cap):
 
 def _determine_trend_status(curr_p, sma_v, pe_v, kgv_max_threshold):
     """Determines the trend status."""
-    is_bullish = False
-    if not pd.isna(sma_v):
-        is_bullish = curr_p > sma_v
+    # If any critical value is NA, we cannot determine a specific trend, so default to HALTEN
+    if pd.isna(curr_p) or pd.isna(sma_v):
+        return "HALTEN"
 
-    trend = (
-        "BULLISH"
-        if is_bullish
-        and (
-            isinstance(pe_v, (int, float))
-            and pe_v < kgv_max_threshold
-            or pe_v == "N/A"
-        )
-        else "HALTEN"
-    )
-    return trend
+    is_bullish = curr_p > sma_v
+
+    if pd.isna(pe_v):
+        # If PE is NA, we can still be bullish based on SMA alone
+        return "BULLISH" if is_bullish else "HALTEN"
+    else:
+        # If PE is available, use it with KGV threshold
+        if is_bullish and pe_v < kgv_max_threshold:
+            return "BULLISH"
+        else:
+            return "HALTEN"
 
 
 def get_financial_metrics(ticker_tuple):
@@ -203,12 +200,37 @@ def get_financial_metrics(ticker_tuple):
     Implementiert einen Retry-Mechanismus.
     """
     original_ticker, yahoo_ticker_symbol = ticker_tuple
-    company_name = "N/A"  # Initialisiere Firmenname für Fehlerfälle
+    company_name = "N/A"
+    ticker_obj = None
+    info = {}
 
+    # Schritt 1: Ticker-Objekt und grundlegende Informationen abrufen (ohne Retry-Logik hier)
+    try:
+        ticker_obj = yf.Ticker(yahoo_ticker_symbol)
+        info = ticker_obj.info
+        company_name = info.get("longName", "N/A")
+    except Exception as e:
+        logging.warning(
+            f"[{original_ticker}] Initial info fetch failed for {yahoo_ticker_symbol}: {e}"
+        )
+        return {
+            "Original_Ticker": original_ticker,
+            "Yahoo_Symbol": yahoo_ticker_symbol,
+            "Firmenname": company_name,
+            "Preis": pd.NA,
+            "SMA": pd.NA,
+            "KGV": pd.NA,
+            "Trend": "N/A",
+            "ATH/ATL": "N/A",
+            "Valuation": "N/A",
+            "Status": f"Initial info fetch failed: {str(e)}",
+        }
+
+    # Schritt 2: Historische Daten abrufen und Metriken berechnen (mit Retry-Logik)
     for attempt in range(RETRIES):
         try:
-            ticker, info, hist_short, hist_max = _get_ticker_info_and_history(yahoo_ticker_symbol, HISTORY_PERIOD)
-            company_name = info.get("longName", "N/A")
+            hist_short = ticker_obj.history(period=HISTORY_PERIOD)
+            hist_max = ticker_obj.history(period="max")
 
             if hist_short.empty or len(hist_short) < SMA_PERIOD:
                 logging.warning(
@@ -231,18 +253,32 @@ def get_financial_metrics(ticker_tuple):
             curr_p = hist_short["Close"].iloc[-1]
             sma_v = _calculate_sma_value(hist_short, SMA_PERIOD)
             pe_v = _calculate_pe_ratio(info, curr_p)
-            ath_atl_status = _determine_ath_atl_status(hist_max, curr_p, ATH_ATL_THRESHOLD_PERCENT)
-            valuation_status = _determine_valuation_status(pe_v, info, PE_CHEAP_THRESHOLD, PE_EXPENSIVE_THRESHOLD, PEG_MAX_THRESHOLD)
-            dividend_yield, market_cap = _get_optional_metrics(info, INCLUDE_DIVIDEND_YIELD, INCLUDE_MARKET_CAP)
+            ath_atl_status = _determine_ath_atl_status(
+                hist_max, curr_p, ATH_ATL_THRESHOLD_PERCENT
+            )
+            valuation_status = _determine_valuation_status(
+                pe_v,
+                info,
+                PE_CHEAP_THRESHOLD,
+                PE_EXPENSIVE_THRESHOLD,
+                PEG_MAX_THRESHOLD,
+            )
+            dividend_yield, market_cap = _get_optional_metrics(
+                info, INCLUDE_DIVIDEND_YIELD, INCLUDE_MARKET_CAP
+            )
             trend = _determine_trend_status(curr_p, sma_v, pe_v, KGV_MAX_THRESHOLD)
 
             result = {
                 "Original_Ticker": original_ticker,
                 "Yahoo_Symbol": yahoo_ticker_symbol,
                 "Firmenname": company_name,
-                "Preis": round(curr_p, 2),
-                "SMA": round(sma_v, 2) if not pd.isna(sma_v) else "N/A",
-                "KGV": round(pe_v, 2) if isinstance(pe_v, (int, float)) else "N/A",
+                "Preis": round(curr_p, 2)
+                if not pd.isna(curr_p)
+                else pd.NA,  # Added pd.isna check
+                "SMA": round(sma_v, 2) if not pd.isna(sma_v) else pd.NA,
+                "KGV": round(pe_v, 2)
+                if isinstance(pe_v, (int, float)) and not pd.isna(pe_v)
+                else pd.NA,
                 "Trend": trend,
                 "ATH/ATL": ath_atl_status,
                 "Valuation": valuation_status,
@@ -274,10 +310,11 @@ def get_financial_metrics(ticker_tuple):
                     "Valuation": "N/A",
                     "Status": f"Fehler nach {RETRIES} Versuchen: {str(e)}",
                 }
+    # Fallback, sollte nicht erreicht werden, wenn alle Versuche fehlschlagen oder erfolgreich sind
     return {
         "Original_Ticker": original_ticker,
         "Yahoo_Symbol": yahoo_ticker_symbol,
-        "Firmenname": "N/A",
+        "Firmenname": company_name,
         "Preis": pd.NA,
         "SMA": pd.NA,
         "KGV": pd.NA,
