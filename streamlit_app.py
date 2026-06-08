@@ -1,6 +1,5 @@
 import io
 import re
-import time
 import requests
 import pandas as pd
 import plotly.graph_objects as go
@@ -298,7 +297,7 @@ def render_sidebar():
     portfolios = pm.list_portfolios()
 
     if not portfolios:
-        st.sidebar.info("No portfolios yet. Create one below.")
+        st.info("No portfolios yet. Create one below.")
         st.session_state.current_portfolio = None
     else:
         selected = st.sidebar.selectbox(
