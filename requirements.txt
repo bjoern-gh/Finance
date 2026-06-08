@@ -3,3 +3,6 @@ yfinance
 configparser
 tqdm
 streamlit
+plotly
+requests
+openpyxl

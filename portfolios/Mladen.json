@@ -1,0 +1,15 @@
+{
+  "name": "Mladen",
+  "tickers": [
+    {
+      "original": "MSF.F",
+      "yahoo": "MSF.F",
+      "display_name": "Microsoft Corporation"
+    },
+    {
+      "original": "NVD.F",
+      "yahoo": "NVD.F",
+      "display_name": "NVIDIA Corporation"
+    }
+  ]
+}
