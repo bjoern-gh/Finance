@@ -1,0 +1,48 @@
+services:
+
+  streamlit:
+    build: .
+    container_name: finance-streamlit
+    ports:
+      - "8501:8501"
+    volumes:
+      # Persist portfolios (JSON files) across container restarts
+      - portfolios:/app/portfolios
+      # Optional: mount config.ini from host so you can edit settings without rebuilding
+      - ./config.ini:/app/config.ini:ro
+    environment:
+      - STREAMLIT_SERVER_PORT=8501
+      - STREAMLIT_SERVER_ADDRESS=0.0.0.0
+      - STREAMLIT_SERVER_HEADLESS=true
+      - STREAMLIT_BROWSER_GATHER_USAGE_STATS=false
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+  api:
+    build: .
+    container_name: finance-api
+    command: uvicorn api:app --host 0.0.0.0 --port 8000 --workers 2
+    ports:
+      - "8000:8000"
+    volumes:
+      # Share the same portfolios volume so both services see the same data
+      - portfolios:/app/portfolios
+      - ./config.ini:/app/config.ini:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  portfolios:
+    # Named volume — data lives in Docker's volume store and survives `docker-compose down`
+    # Use `docker-compose down -v` only if you want to wipe portfolio data too
+    name: finance_portfolios

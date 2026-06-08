@@ -3,3 +3,8 @@ yfinance
 configparser
 tqdm
 streamlit
+plotly
+requests
+openpyxl
+fastapi
+uvicorn[standard]

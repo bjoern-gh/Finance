@@ -11,7 +11,7 @@ from financial_analyzer import (
     parse_and_convert_tickers,
     format_large_number,
     get_financial_metrics,
-    _calculate_sma_value,
+    _calculate_sma,
     _calculate_pe_ratio,
     _determine_ath_atl_status,
     _determine_valuation_status,
@@ -80,7 +80,7 @@ def test_format_large_number(input_number, expected_output):
 )
 def test_calculate_sma_value(close_prices, sma_period, expected_sma):
     hist_short = pd.DataFrame({"Close": close_prices})
-    sma = _calculate_sma_value(hist_short, sma_period)
+    sma = _calculate_sma(hist_short, sma_period)
     if pd.isna(expected_sma):
         assert pd.isna(sma)
     else:
@@ -125,21 +125,21 @@ def test_calculate_pe_ratio(info, curr_p, expected_pe):
             {"High": [100, 110, 120], "Low": [80, 85, 90]},
             118,
             5,
-            "Nahe ATH",
+            "Near ATH",
         ),  # Near ATH
-        ({"High": [100, 110, 120], "Low": [80, 85, 90]}, 82, 5, "Nahe ATL"),  # Near ATL
+        ({"High": [100, 110, 120], "Low": [80, 85, 90]}, 82, 5, "Near ATL"),  # Near ATL
         ({"High": [100, 110, 120], "Low": [80, 85, 90]}, 100, 5, "Normal"),  # Normal
         (
             {"High": [100, 110, 120], "Low": [80, 85, 90]},
             120,
             0,
-            "Nahe ATH",
+            "Near ATH",
         ),  # Exactly ATH, 0% threshold
         (
             {"High": [100, 110, 120], "Low": [80, 85, 90]},
             80,
             0,
-            "Nahe ATL",
+            "Near ATL",
         ),  # Exactly ATL, 0% threshold
         ({"High": [], "Low": []}, 100, 5, "N/A"),  # Empty hist_max
     ],
@@ -155,15 +155,15 @@ def test_determine_ath_atl_status(
 @pytest.mark.parametrize(
     "pe_value, earnings_growth, expected_valuation",
     [
-        (10.0, 0.20, "Sehr Günstig (PEG)"),  # Cheap PE, good PEG
-        (10.0, 0.05, "Günstig (Hoher PEG)"),  # Cheap PE, high PEG
-        (20.0, 0.20, "Fair (PEG)"),  # Fair PE, good PEG
-        (20.0, 0.05, "Fair (Hoher PEG)"),  # Fair PE, high PEG
-        (35.0, 0.40, "Teuer"),  # Expensive PE, good PEG (still expensive)
-        (35.0, 0.05, "Sehr Teuer (Hoher PEG)"),  # Expensive PE, high PEG
-        (10.0, None, "Günstig"),  # Cheap PE, no growth
+        (10.0, 0.20, "Very Cheap (PEG)"),  # Cheap PE, good PEG
+        (10.0, 0.05, "Cheap (High PEG)"),  # Cheap PE, high PEG
+        (20.0, 0.20, "Fair (Good PEG)"),  # Fair PE, good PEG
+        (20.0, 0.05, "Fair (High PEG)"),  # Fair PE, high PEG
+        (35.0, 0.40, "Expensive"),  # Expensive PE, good PEG (still expensive)
+        (35.0, 0.05, "Very Expensive (PEG)"),  # Expensive PE, high PEG
+        (10.0, None, "Cheap"),  # Cheap PE, no growth
         (20.0, None, "Fair"),  # Fair PE, no growth
-        (35.0, None, "Teuer"),  # Expensive PE, no growth
+        (35.0, None, "Expensive"),  # Expensive PE, no growth
         (pd.NA, 0.10, "N/A"),  # No PE, but growth, changed to pd.NA
         (pd.NA, None, "N/A"),  # No PE, no growth, changed to pd.NA
     ],
@@ -215,39 +215,39 @@ def test_get_optional_metrics(
     expected_div_yield,
     expected_mkt_cap,
 ):
-    div_yield, mkt_cap = _get_optional_metrics(
-        info, include_dividend_yield, include_market_cap
-    )
-    if pd.isna(expected_div_yield):
-        assert pd.isna(div_yield)
-    else:
-        assert div_yield == expected_div_yield
+    # Mock the global config variables for these tests
+    with patch('financial_analyzer.INCLUDE_DIVIDEND_YIELD', include_dividend_yield), \
+         patch('financial_analyzer.INCLUDE_MARKET_CAP', include_market_cap):
+        result = _get_optional_metrics(info)
+        div_yield = result.get("Dividend Yield (%)")
+        mkt_cap = result.get("Market Cap")
 
-    if pd.isna(expected_mkt_cap):
-        assert pd.isna(mkt_cap)
-    else:
-        assert mkt_cap == expected_mkt_cap
+        if pd.isna(expected_div_yield):
+            assert pd.isna(div_yield)
+        else:
+            assert div_yield == expected_div_yield
+
+        if pd.isna(expected_mkt_cap):
+            assert pd.isna(mkt_cap)
+        else:
+            assert mkt_cap == expected_mkt_cap
 
 
 @pytest.mark.parametrize(
-    "curr_p, sma_v, pe_v, kgv_max_threshold, expected_trend",
+    "curr_p, sma200, sma50, rsi, pe_v, kgv_max_threshold, expected_trend",
     [
-        (105, 100, 20, 25, "BULLISH"),  # Price > SMA, PE < KGV_MAX
-        (95, 100, 20, 25, "HALTEN"),  # Price < SMA
-        (105, 100, 30, 25, "HALTEN"),  # Price > SMA, PE > KGV_MAX
-        (
-            105,
-            100,
-            pd.NA,
-            25,
-            "BULLISH",
-        ),  # Price > SMA, PE is pd.NA, changed from "N/A"
-        (105, pd.NA, 20, 25, "HALTEN"),  # SMA is N/A
-        (pd.NA, 100, 20, 25, "HALTEN"),  # Current price is N/A
+        (105, 100, 102, 50, 20, 25, "STRONG BUY"),  # Price > SMA50 > SMA200, RSI ok, PE ok
+        (105, 100, pd.NA, 50, 20, 25, "BULLISH"),  # Price > SMA200, SMA50 NA, RSI ok, PE ok
+        (105, 100, 102, 80, 20, 25, "OVERBOUGHT"),  # Price > SMA200, RSI overbought
+        (105, 100, 102, 50, 30, 25, "HOLD"),  # Price > SMA200, PE too high
+        (95, 100, 98, 20, 20, 25, "OVERSOLD"),  # Price < SMA200, RSI oversold
+        (95, 100, 98, 50, 20, 25, "BEARISH"),  # Price < SMA200
+        (pd.NA, 100, 102, 50, 20, 25, "HOLD"),  # Current price is N/A
+        (105, pd.NA, 102, 50, 20, 25, "HOLD"),  # SMA200 is N/A
     ],
 )
-def test_determine_trend_status(curr_p, sma_v, pe_v, kgv_max_threshold, expected_trend):
-    trend = _determine_trend_status(curr_p, sma_v, pe_v, kgv_max_threshold)
+def test_determine_trend_status(curr_p, sma200, sma50, rsi, pe_v, kgv_max_threshold, expected_trend):
+    trend = _determine_trend_status(curr_p, sma200, sma50, rsi, pe_v, kgv_max_threshold)
     assert trend == expected_trend
 
 
@@ -262,8 +262,10 @@ def test_determine_trend_status(curr_p, sma_v, pe_v, kgv_max_threshold, expected
 def test_get_financial_metrics_success(mock_logging, mock_config, MockTicker):
     # Setup mock config values
     mock_config.get.return_value = "1y"
-    mock_config.getint.side_effect = lambda section, option: {
+    mock_config.getint.side_effect = lambda section, option, fallback=None: {
         ("General", "sma_period"): 2,
+        ("General", "sma_short_period"): 2, # Added for SMA50
+        ("General", "rsi_period"): 14, # Added for RSI
         ("General", "retries"): 1,
         ("General", "retry_delay_seconds"): 0,
         ("General", "ath_atl_threshold_percent"): 5,
@@ -271,7 +273,7 @@ def test_get_financial_metrics_success(mock_logging, mock_config, MockTicker):
             "General",
             "kgv_max_threshold",
         ): 30,  # Adjusted for test_get_financial_metrics_valuation
-    }.get((section, option))
+    }.get((section, option), fallback)
     mock_config.getboolean.side_effect = lambda section, option: {
         ("Metrics", "include_dividend_yield"): True,
         ("Metrics", "include_market_cap"): True,
@@ -294,6 +296,14 @@ def test_get_financial_metrics_success(mock_logging, mock_config, MockTicker):
         "dividendYield": 0.005,  # 0.5%
         "marketCap": 2_000_000_000_000,  # 2 Trillion
         "earningsGrowth": 0.10,  # 10% growth for PEG
+        "currency": "USD",
+        "fiftyTwoWeekHigh": 120,
+        "fiftyTwoWeekLow": 80,
+        "debtToEquity": 50,
+        "revenueGrowth": 0.15,
+        "profitMargins": 0.20,
+        "beta": 1.2,
+        "sector": "Technology",
     }
 
     # Mock ticker.history
@@ -323,27 +333,39 @@ def test_get_financial_metrics_success(mock_logging, mock_config, MockTicker):
         mock_hist_df_max,  # Second call for period="max"
     ]
 
-    ticker_tuple = ("NASDAQ:AAPL", "AAPL")
-    result = get_financial_metrics(ticker_tuple)
+    # Mock _get_eur_rate to return a fixed value for testing
+    with patch('financial_analyzer._get_eur_rate', return_value=0.9): # 1 USD = 0.9 EUR
+        ticker_tuple = ("NASDAQ:AAPL", "AAPL")
+        result = get_financial_metrics(ticker_tuple)
 
-    assert result["Original_Ticker"] == "NASDAQ:AAPL"
-    assert result["Yahoo_Symbol"] == "AAPL"
-    assert result["Firmenname"] == "Apple Inc."
-    assert result["Preis"] == 105.00
-    assert result["SMA"] == 104.50  # (104+105)/2
-    assert result["KGV"] == 25.00
-    assert (
-        result["Trend"] == "BULLISH"
-    )  # 105 > 104.50 and KGV < KGV_MAX_THRESHOLD (default 25, but mocked to 25)
-    assert (
-        result["ATH/ATL"] == "Normal"
-    )  # Current price 105, ATH 120, ATL 80. 5% threshold: 120*0.95 = 114, 80*1.05 = 84. 105 is between 84 and 114.
-    assert (
-        result["Valuation"] == "Fair (Hoher PEG)"
-    )  # PE 25 (Fair), PEG 25/(10*100) = 2.5 (High PEG) -> should be Fair (Hoher PEG)
-    assert result["Status"] == "OK"
-    assert result["Dividendenrendite (%)"] == 0.50
-    assert result["Marktkapitalisierung"] == "2.00T"
+        assert result["Original Ticker"] == "NASDAQ:AAPL"
+        assert result["Yahoo Symbol"] == "AAPL"
+        assert result["Company"] == "Apple Inc."
+        assert result["Price"] == 105.00
+        assert result["Price (EUR)"] == 94.50 # 105 * 0.9
+        assert result["SMA200"] == 104.50  # (104+105)/2
+        assert result["SMA50"] == 104.50 # (104+105)/2
+        assert result["RSI"] == 100.0 # Mocked data leads to this
+        assert result["P/E (KGV)"] == 25.00
+        assert (
+            result["Trend"] == "STRONG BUY"
+        ) # Price > SMA50 > SMA200, RSI ok, PE ok (25 < 30)
+        assert (
+            result["ATH/ATL"] == "Normal"
+        )  # Current price 105, ATH 120, ATL 80. 5% threshold: 120*0.95 = 114, 80*1.05 = 84. 105 is between 84 and 114.
+        assert (
+            result["Valuation"] == "Fair (Good PEG)"
+        )  # PE 25 (Fair), PEG 25/(10*100) = 2.5 (High PEG) -> should be Fair (Hoher PEG)
+        assert result["Status"] == "OK"
+        assert result["Dividend Yield (%)"] == 0.50
+        assert result["Market Cap"] == "2.00T"
+        assert result["52W High (%)"] == -12.5
+        assert result["52W Low (%)"] == 31.2
+        assert result["D/E Ratio"] == 0.5
+        assert result["Revenue Growth (%)"] == 15.0
+        assert result["Profit Margin (%)"] == 20.0
+        assert result["Beta"] == 1.2
+        assert result["Sector"] == "Technology"
 
 
 @patch("financial_analyzer.yf.Ticker")
@@ -353,13 +375,15 @@ def test_get_financial_metrics_success(mock_logging, mock_config, MockTicker):
 )  # Mock logging to prevent console output during tests
 def test_get_financial_metrics_no_data(mock_logging, mock_config, MockTicker):
     mock_config.get.return_value = "1y"
-    mock_config.getint.side_effect = lambda section, option: {
+    mock_config.getint.side_effect = lambda section, option, fallback=None: {
         ("General", "sma_period"): 2,
+        ("General", "sma_short_period"): 2,
+        ("General", "rsi_period"): 14,
         ("General", "retries"): 1,
         ("General", "retry_delay_seconds"): 0,
         ("General", "ath_atl_threshold_percent"): 5,
         ("General", "kgv_max_threshold"): 25,
-    }.get((section, option))
+    }.get((section, option), fallback)
     mock_config.getboolean.return_value = False  # Don't include optional metrics
     mock_config.getfloat.side_effect = lambda section, option: {
         ("General", "pe_cheap_threshold"): 15.0,
@@ -373,22 +397,25 @@ def test_get_financial_metrics_no_data(mock_logging, mock_config, MockTicker):
     mock_ticker_instance.info = {"longName": "No Data Co."}
     mock_ticker_instance.history.side_effect = [
         pd.DataFrame(),  # First call for hist_short (empty)
-        pd.DataFrame(),  # Second call for hist_max (empty)
+        pd.DataFrame(),  # Second call for period="max" (empty)
     ]
 
-    ticker_tuple = ("NASDAQ:NODATA", "NODATA")
-    result = get_financial_metrics(ticker_tuple)
+    with patch('financial_analyzer._get_eur_rate', return_value=1.0):
+        ticker_tuple = ("NASDAQ:NODATA", "NODATA")
+        result = get_financial_metrics(ticker_tuple)
 
-    assert result["Original_Ticker"] == "NASDAQ:NODATA"
-    assert result["Yahoo_Symbol"] == "NODATA"
-    assert result["Firmenname"] == "No Data Co."
-    assert pd.isna(result["Preis"])
-    assert pd.isna(result["SMA"])
-    assert pd.isna(result["KGV"])
-    assert result["Trend"] == "N/A"
-    assert result["ATH/ATL"] == "N/A"
-    assert result["Valuation"] == "N/A"
-    assert "Keine/unzureichende Daten" in result["Status"]
+        assert result["Original Ticker"] == "NASDAQ:NODATA"
+        assert result["Yahoo Symbol"] == "NODATA"
+        assert result["Company"] == "No Data Co."
+        assert pd.isna(result["Price"])
+        assert pd.isna(result["SMA200"])
+        assert pd.isna(result["SMA50"])
+        assert pd.isna(result["RSI"])
+        assert pd.isna(result["P/E (KGV)"])
+        assert result["Trend"] == "HOLD" # Default for insufficient data
+        assert result["ATH/ATL"] == "N/A"
+        assert result["Valuation"] == "N/A"
+        assert "Insufficient data (delisted or wrong symbol?)" in result["Status"]
 
 
 @patch("financial_analyzer.yf.Ticker")
@@ -398,13 +425,15 @@ def test_get_financial_metrics_no_data(mock_logging, mock_config, MockTicker):
 )  # Mock logging to prevent console output during tests
 def test_get_financial_metrics_api_error(mock_logging, mock_config, MockTicker):
     mock_config.get.return_value = "1y"
-    mock_config.getint.side_effect = lambda section, option: {
+    mock_config.getint.side_effect = lambda section, option, fallback=None: {
         ("General", "sma_period"): 2,
+        ("General", "sma_short_period"): 2,
+        ("General", "rsi_period"): 14,
         ("General", "retries"): 1,
         ("General", "retry_delay_seconds"): 0,
         ("General", "ath_atl_threshold_percent"): 5,
         ("General", "kgv_max_threshold"): 25,
-    }.get((section, option))
+    }.get((section, option), fallback)
     mock_config.getboolean.return_value = False
     mock_config.getfloat.side_effect = lambda section, option: {
         ("General", "pe_cheap_threshold"): 15.0,
@@ -421,19 +450,22 @@ def test_get_financial_metrics_api_error(mock_logging, mock_config, MockTicker):
         "API Limit Exceeded"
     )  # Simulate API error on history fetch
 
-    ticker_tuple = ("NASDAQ:ERROR", "ERROR")
-    result = get_financial_metrics(ticker_tuple)
+    with patch('financial_analyzer._get_eur_rate', return_value=1.0):
+        ticker_tuple = ("NASDAQ:ERROR", "ERROR")
+        result = get_financial_metrics(ticker_tuple)
 
-    assert result["Original_Ticker"] == "NASDAQ:ERROR"
-    assert result["Yahoo_Symbol"] == "ERROR"
-    assert result["Firmenname"] == "Error Co."  # Company name should be available
-    assert pd.isna(result["Preis"])
-    assert pd.isna(result["SMA"])
-    assert pd.isna(result["KGV"])
-    assert result["Trend"] == "N/A"
-    assert result["ATH/ATL"] == "N/A"
-    assert result["Valuation"] == "N/A"
-    assert "Fehler nach 1 Versuchen: API Limit Exceeded" in result["Status"]
+        assert result["Original Ticker"] == "NASDAQ:ERROR"
+        assert result["Yahoo Symbol"] == "ERROR"
+        assert result["Company"] == "Error Co."  # Company name should be available
+        assert pd.isna(result["Price"])
+        assert pd.isna(result["SMA200"])
+        assert pd.isna(result["SMA50"])
+        assert pd.isna(result["RSI"])
+        assert pd.isna(result["P/E (KGV)"])
+        assert result["Trend"] == "N/A"
+        assert result["ATH/ATL"] == "N/A"
+        assert result["Valuation"] == "N/A"
+        assert "Failed after 1 attempts: API Limit Exceeded" in result["Status"]
 
 
 @patch("financial_analyzer.yf.Ticker")
@@ -443,13 +475,15 @@ def test_get_financial_metrics_api_error(mock_logging, mock_config, MockTicker):
 )  # Mock logging to prevent console output during tests
 def test_get_financial_metrics_kgv_threshold(mock_logging, mock_config, MockTicker):
     mock_config.get.return_value = "1y"
-    mock_config.getint.side_effect = lambda section, option: {
+    mock_config.getint.side_effect = lambda section, option, fallback=None: {
         ("General", "sma_period"): 2,
+        ("General", "sma_short_period"): 2,
+        ("General", "rsi_period"): 14,
         ("General", "kgv_max_threshold"): 20,  # Set a lower threshold
         ("General", "retries"): 1,
         ("General", "retry_delay_seconds"): 0,
         ("General", "ath_atl_threshold_percent"): 5,
-    }.get((section, option))
+    }.get((section, option), fallback)
     mock_config.getboolean.return_value = False
     mock_config.getfloat.side_effect = lambda section, option: {
         ("General", "pe_cheap_threshold"): 15.0,
@@ -464,6 +498,9 @@ def test_get_financial_metrics_kgv_threshold(mock_logging, mock_config, MockTick
         "longName": "High KGV Co.",
         "trailingPE": 25.0,  # KGV above threshold
         "earningsGrowth": 0.10,
+        "currency": "USD",
+        "fiftyTwoWeekHigh": 120,
+        "fiftyTwoWeekLow": 80,
     }
 
     mock_hist_df_short = pd.DataFrame(
@@ -492,19 +529,22 @@ def test_get_financial_metrics_kgv_threshold(mock_logging, mock_config, MockTick
         mock_hist_df_max,  # Second call for period="max"
     ]
 
-    ticker_tuple = ("NASDAQ:HIGHKGV", "HIGHKGV")
-    result = get_financial_metrics(ticker_tuple)
+    with patch('financial_analyzer._get_eur_rate', return_value=1.0):
+        ticker_tuple = ("NASDAQ:HIGHKGV", "HIGHKGV")
+        result = get_financial_metrics(ticker_tuple)
 
-    assert result["Original_Ticker"] == "NASDAQ:HIGHKGV"
-    assert result["Yahoo_Symbol"] == "HIGHKGV"
-    assert result["Firmenname"] == "High KGV Co."
-    assert result["Preis"] == 105.00
-    assert result["SMA"] == 104.50
-    assert result["KGV"] == 25.00
-    assert result["Trend"] == "HALTEN"  # KGV is above threshold, so not BULLISH
-    assert result["ATH/ATL"] == "Normal"
-    assert result["Valuation"] == "Fair (Hoher PEG)"  # PE 25 (Fair), PEG 2.5 (High PEG)
-    assert result["Status"] == "OK"
+        assert result["Original Ticker"] == "NASDAQ:HIGHKGV"
+        assert result["Yahoo Symbol"] == "HIGHKGV"
+        assert result["Company"] == "High KGV Co."
+        assert result["Price"] == 105.00
+        assert result["SMA200"] == 104.50
+        assert result["SMA50"] == 104.50
+        assert result["RSI"] == 100.0
+        assert result["P/E (KGV)"] == 25.00
+        assert result["Trend"] == "HOLD"  # KGV is above threshold, so not BULLISH
+        assert result["ATH/ATL"] == "Normal"
+        assert result["Valuation"] == "Fair (High PEG)"  # PE 25 (Fair), PEG 2.5 (High PEG)
+        assert result["Status"] == "OK"
 
 
 @patch("financial_analyzer.yf.Ticker")
@@ -514,13 +554,15 @@ def test_get_financial_metrics_kgv_threshold(mock_logging, mock_config, MockTick
 )  # Mock logging to prevent console output during tests
 def test_get_financial_metrics_no_pe_but_eps(mock_logging, mock_config, MockTicker):
     mock_config.get.return_value = "1y"
-    mock_config.getint.side_effect = lambda section, option: {
+    mock_config.getint.side_effect = lambda section, option, fallback=None: {
         ("General", "sma_period"): 2,
+        ("General", "sma_short_period"): 2,
+        ("General", "rsi_period"): 14,
         ("General", "kgv_max_threshold"): 30,
         ("General", "retries"): 1,
         ("General", "retry_delay_seconds"): 0,
         ("General", "ath_atl_threshold_percent"): 5,
-    }.get((section, option))
+    }.get((section, option), fallback)
     mock_config.getboolean.return_value = False
     mock_config.getfloat.side_effect = lambda section, option: {
         ("General", "pe_cheap_threshold"): 15.0,
@@ -537,6 +579,9 @@ def test_get_financial_metrics_no_pe_but_eps(mock_logging, mock_config, MockTick
         "trailingPE": None,
         "forwardPE": None,
         "earningsGrowth": 0.10,
+        "currency": "USD",
+        "fiftyTwoWeekHigh": 120,
+        "fiftyTwoWeekLow": 80,
     }
 
     mock_hist_df_short = pd.DataFrame(
@@ -565,19 +610,22 @@ def test_get_financial_metrics_no_pe_but_eps(mock_logging, mock_config, MockTick
         mock_hist_df_max,  # Second call for period="max"
     ]
 
-    ticker_tuple = ("NASDAQ:EPSONLY", "EPSONLY")
-    result = get_financial_metrics(ticker_tuple)
+    with patch('financial_analyzer._get_eur_rate', return_value=1.0):
+        ticker_tuple = ("NASDAQ:EPSONLY", "EPSONLY")
+        result = get_financial_metrics(ticker_tuple)
 
-    assert result["Original_Ticker"] == "NASDAQ:EPSONLY"
-    assert result["Yahoo_Symbol"] == "EPSONLY"
-    assert result["Firmenname"] == "EPS Only Co."
-    assert result["Preis"] == 100.00
-    assert result["SMA"] == 102.00  # (104+100)/2
-    assert result["KGV"] == 25.00
-    assert result["Trend"] == "HALTEN"  # Price 100 is not > SMA 102
-    assert result["ATH/ATL"] == "Normal"
-    assert result["Valuation"] == "Fair (Hoher PEG)"  # PE 25 (Fair), PEG 2.5 (High PEG)
-    assert result["Status"] == "OK"
+        assert result["Original Ticker"] == "NASDAQ:EPSONLY"
+        assert result["Yahoo Symbol"] == "EPSONLY"
+        assert result["Company"] == "EPS Only Co."
+        assert result["Price"] == 100.00
+        assert result["SMA200"] == 102.00  # (104+100)/2
+        assert result["SMA50"] == 102.00
+        assert result["RSI"] == 100.0
+        assert result["P/E (KGV)"] == 25.00
+        assert result["Trend"] == "BEARISH"  # Price 100 is not > SMA 102
+        assert result["ATH/ATL"] == "Normal"
+        assert result["Valuation"] == "Fair (High PEG)"  # PE 25 (Fair), PEG 2.5 (High PEG)
+        assert result["Status"] == "OK"
 
 
 @patch("financial_analyzer.yf.Ticker")
@@ -587,13 +635,15 @@ def test_get_financial_metrics_no_pe_but_eps(mock_logging, mock_config, MockTick
 )  # Mock logging to prevent console output during tests
 def test_get_financial_metrics_no_pe_no_eps(mock_logging, mock_config, MockTicker):
     mock_config.get.return_value = "1y"
-    mock_config.getint.side_effect = lambda section, option: {
+    mock_config.getint.side_effect = lambda section, option, fallback=None: {
         ("General", "sma_period"): 2,
+        ("General", "sma_short_period"): 2,
+        ("General", "rsi_period"): 14,
         ("General", "kgv_max_threshold"): 30,
         ("General", "retries"): 1,
         ("General", "retry_delay_seconds"): 0,
         ("General", "ath_atl_threshold_percent"): 5,
-    }.get((section, option))
+    }.get((section, option), fallback)
     mock_config.getboolean.return_value = False
     mock_config.getfloat.side_effect = lambda section, option: {
         ("General", "pe_cheap_threshold"): 15.0,
@@ -610,6 +660,9 @@ def test_get_financial_metrics_no_pe_no_eps(mock_logging, mock_config, MockTicke
         "trailingPE": None,
         "forwardPE": None,
         "earningsGrowth": None,  # No earnings growth
+        "currency": "USD",
+        "fiftyTwoWeekHigh": 120,
+        "fiftyTwoWeekLow": 80,
     }
 
     mock_hist_df_short = pd.DataFrame(
@@ -638,35 +691,38 @@ def test_get_financial_metrics_no_pe_no_eps(mock_logging, mock_config, MockTicke
         mock_hist_df_max,  # Second call for period="max"
     ]
 
-    ticker_tuple = ("NASDAQ:NOPEEPS", "NOPEEPS")
-    result = get_financial_metrics(ticker_tuple)
+    with patch('financial_analyzer._get_eur_rate', return_value=1.0):
+        ticker_tuple = ("NASDAQ:NOPEEPS", "NOPEEPS")
+        result = get_financial_metrics(ticker_tuple)
 
-    assert result["Original_Ticker"] == "NASDAQ:NOPEEPS"
-    assert result["Yahoo_Symbol"] == "NOPEEPS"
-    assert result["Firmenname"] == "No PE/EPS Co."
-    assert result["Preis"] == 105.00
-    assert result["SMA"] == 104.50  # Corrected from pd.isna(result["SMA"])
-    assert pd.isna(result["KGV"])
-    assert (
-        result["Trend"] == "BULLISH"
-    )  # Price > SMA, and KGV is N/A (which is treated as not exceeding threshold)
-    assert result["ATH/ATL"] == "Normal"
-    assert result["Valuation"] == "N/A"  # No PE or EPS, so no valuation
-    assert result["Status"] == "OK"
+        assert result["Original Ticker"] == "NASDAQ:NOPEEPS"
+        assert result["Yahoo Symbol"] == "NOPEEPS"
+        assert result["Company"] == "No PE/EPS Co."
+        assert result["Price"] == 105.00
+        assert result["SMA200"] == 104.50
+        assert result["SMA50"] == 104.50
+        assert result["RSI"] == 100.0
+        assert pd.isna(result["P/E (KGV)"])
+        assert (
+            result["Trend"] == "BULLISH"
+        )  # Price > SMA, and KGV is N/A (which is treated as not exceeding threshold)
+        assert result["ATH/ATL"] == "Normal"
+        assert result["Valuation"] == "N/A"  # No PE or EPS, so no valuation
+        assert result["Status"] == "OK"
 
 
 @pytest.mark.parametrize(
     "pe_value, earnings_growth, expected_valuation",
     [
-        (10.0, 0.20, "Sehr Günstig (PEG)"),  # Cheap PE, good PEG
-        (10.0, 0.05, "Günstig (Hoher PEG)"),  # Cheap PE, high PEG
-        (20.0, 0.20, "Fair (PEG)"),  # Fair PE, good PEG
-        (20.0, 0.05, "Fair (Hoher PEG)"),  # Fair PE, high PEG
-        (35.0, 0.40, "Teuer"),  # Expensive PE, good PEG (still expensive)
-        (35.0, 0.05, "Sehr Teuer (Hoher PEG)"),  # Expensive PE, high PEG
-        (10.0, None, "Günstig"),  # Cheap PE, no growth
+        (10.0, 0.20, "Very Cheap (PEG)"),  # Cheap PE, good PEG
+        (10.0, 0.05, "Cheap (High PEG)"),  # Cheap PE, high PEG
+        (20.0, 0.20, "Fair (Good PEG)"),  # Fair PE, good PEG
+        (20.0, 0.05, "Fair (High PEG)"),  # Fair PE, high PEG
+        (35.0, 0.40, "Expensive"),  # Expensive PE, good PEG (still expensive)
+        (35.0, 0.05, "Very Expensive (PEG)"),  # Expensive PE, high PEG
+        (10.0, None, "Cheap"),  # Cheap PE, no growth
         (20.0, None, "Fair"),  # Fair PE, no growth
-        (35.0, None, "Teuer"),  # Expensive PE, no growth
+        (35.0, None, "Expensive"),  # Expensive PE, no growth
         (pd.NA, 0.10, "N/A"),  # No PE, but growth, changed to pd.NA
         (pd.NA, None, "N/A"),  # No PE, no growth, changed to pd.NA
     ],

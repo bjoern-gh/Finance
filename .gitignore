@@ -14,3 +14,7 @@ venv/
 
 # Jupyter Notebook
 .ipynb_checkpoints
+
+# Portfolio data (persisted via Docker volume, not committed to git)
+portfolios/
+ticker.txt
