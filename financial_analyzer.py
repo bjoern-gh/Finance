@@ -107,17 +107,33 @@ def format_large_number(num):
 
 def parse_and_convert_tickers(data_string: str) -> list[tuple[str, str]]:
     """
-    Extract ticker symbols from a raw string and convert to Yahoo Finance format.
+    Extract ticker symbols from a raw string (comma-separated) and convert to Yahoo Finance format.
     Returns list of (original_ticker, yahoo_symbol) tuples.
-    Supports: FRA, ETR, CVE, TSX, NYSE, NASDAQ, LSE, EPA, AMS, BIT, BME, ASX, HKG, TYO, SWX.
+    Supports: FRA, ETR, CVE, TSX, NYSE, NASDAQ, LSE, EPA, AMS, BIT, BME, ASX, HKG, TYO, SWX,
+    and plain Yahoo Finance symbols.
     """
-    raw_matches = re.findall(_PREFIX_PATTERN, data_string)
     converted = []
-    for t in raw_matches:
-        prefix, symbol = t.split(":", 1)
-        suffix = EXCHANGE_MAP.get(prefix, "")
-        yahoo_symbol = symbol + suffix
-        converted.append((t, yahoo_symbol))
+    # Split the string by commas and process each ticker
+    for t_str in data_string.split(','):
+        t_str = t_str.strip()
+        if not t_str:
+            continue
+
+        original_ticker = t_str
+        yahoo_symbol = t_str
+
+        # Check if the ticker has a prefix (e.g., FRA:R5A)
+        if ":" in t_str:
+            parts = t_str.split(":", 1)
+            if len(parts) == 2:
+                prefix, symbol = parts
+                suffix = EXCHANGE_MAP.get(prefix.upper()) # Use .upper() for robustness
+                if suffix is not None: # Check if prefix is in EXCHANGE_MAP
+                    yahoo_symbol = symbol + suffix
+                # If prefix not in map, treat as plain Yahoo symbol (e.g., custom exchange:symbol)
+                # In this case, yahoo_symbol remains t_str
+        
+        converted.append((original_ticker, yahoo_symbol))
     return converted
 
 
