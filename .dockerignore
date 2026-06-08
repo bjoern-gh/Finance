@@ -1,0 +1,30 @@
+# Virtual environment — never copy into the image
+.venv/
+venv/
+env/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Local portfolio data (managed by Docker volume, not baked into image)
+portfolios/
+
+# Development / IDE
+.git/
+.gitignore
+.idea/
+*.iml
+.DS_Store
+
+# Dev dependencies
+dev-requirements.txt
+
+# Tests
+tests/
+
+# Misc
+*.log
+*.csv

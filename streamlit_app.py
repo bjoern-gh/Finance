@@ -78,7 +78,7 @@ VALUATION_COLORS = {
 }
 
 
-def style_dataframe(df: pd.DataFrame) -> pd.io.formats.style.Styler:
+def style_dataframe(df: pd.DataFrame):
     def color_trend(val):
         return TREND_COLORS.get(str(val), "")
 

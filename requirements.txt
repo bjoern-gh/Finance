@@ -6,3 +6,5 @@ streamlit
 plotly
 requests
 openpyxl
+fastapi
+uvicorn[standard]
