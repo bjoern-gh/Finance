@@ -509,7 +509,7 @@ def render_analysis_tab():
         st.markdown(f"### Results — {len(success_df)} stocks loaded")
 
         display_cols = [
-            "Company", "Yahoo Symbol", "Price", "SMA200", "SMA50", "RSI",
+            "Company", "Yahoo Symbol", "Price", "Currency", "Price (EUR)", "SMA200", "SMA50", "RSI",
             "P/E (KGV)", "Trend", "Valuation", "ATH/ATL",
             "52W High (%)", "52W Low (%)",
             "D/E Ratio", "Revenue Growth (%)", "Profit Margin (%)",

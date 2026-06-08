@@ -38,6 +38,39 @@ PEG_MAX_THRESHOLD = config.getfloat("General", "peg_max_threshold")
 INCLUDE_DIVIDEND_YIELD = config.getboolean("Metrics", "include_dividend_yield")
 INCLUDE_MARKET_CAP = config.getboolean("Metrics", "include_market_cap")
 
+# ── EUR FX rate cache (fetched once per process, reused across tickers) ──────
+_eur_rate_cache: dict[str, float] = {}
+
+
+def _get_eur_rate(currency: str) -> float:
+    """
+    Return the rate to multiply a price in `currency` to get EUR.
+    Caches results so each FX pair is fetched at most once per run.
+    Special case: 'GBp' (pence) = GBP / 100.
+    """
+    if not currency or currency == "EUR":
+        return 1.0
+
+    # Normalise pence → GBP first, remember the /100 factor
+    pence = currency == "GBp"
+    lookup = "GBP" if pence else currency
+
+    if lookup not in _eur_rate_cache:
+        try:
+            ticker = yf.Ticker(f"{lookup}EUR=X")
+            hist = ticker.history(period="1d")
+            if not hist.empty:
+                _eur_rate_cache[lookup] = float(hist["Close"].iloc[-1])
+            else:
+                _eur_rate_cache[lookup] = 1.0  # fallback: treat as 1:1
+                logging.warning(f"FX rate not found for {lookup}EUR=X, defaulting to 1.0")
+        except Exception as e:
+            _eur_rate_cache[lookup] = 1.0
+            logging.warning(f"FX rate fetch failed for {lookup}: {e}")
+
+    rate = _eur_rate_cache[lookup]
+    return rate / 100 if pence else rate
+
 # Exchange prefix → Yahoo Finance suffix mapping
 EXCHANGE_MAP = {
     "FRA": ".F",       # Frankfurt
@@ -274,6 +307,8 @@ def get_financial_metrics(ticker_tuple: tuple[str, str]) -> dict:
         "Trend": "N/A",
         "ATH/ATL": "N/A",
         "Valuation": "N/A",
+        "Currency": "N/A",
+        "Price (EUR)": pd.NA,
         "52W High (%)": pd.NA,
         "52W Low (%)": pd.NA,
         "D/E Ratio": pd.NA,
@@ -314,6 +349,10 @@ def get_financial_metrics(ticker_tuple: tuple[str, str]) -> dict:
                 }
 
             curr_p = hist_short["Close"].iloc[-1]
+            currency = info.get("currency", "N/A") or "N/A"
+            eur_rate = _get_eur_rate(currency)
+            price_eur = round(curr_p * eur_rate, 2) if not pd.isna(curr_p) else pd.NA
+
             sma200 = _calculate_sma(hist_short, SMA_PERIOD)
             sma50 = _calculate_sma(hist_short, SMA_SHORT_PERIOD)
             rsi = _calculate_rsi(hist_short, RSI_PERIOD)
@@ -331,6 +370,8 @@ def get_financial_metrics(ticker_tuple: tuple[str, str]) -> dict:
                 "Yahoo Symbol": yahoo_symbol,
                 "Company": company_name,
                 "Price": round(curr_p, 2) if not pd.isna(curr_p) else pd.NA,
+                "Currency": currency,
+                "Price (EUR)": price_eur if currency != "EUR" else pd.NA,
                 "SMA200": round(sma200, 2) if not pd.isna(sma200) else pd.NA,
                 "SMA50": round(sma50, 2) if not pd.isna(sma50) else pd.NA,
                 "RSI": rsi,
