@@ -6,7 +6,6 @@ Schema: {"name": str, "tickers": [{"original": str, "yahoo": str, "display_name"
 """
 
 import json
-import os
 from pathlib import Path
 
 PORTFOLIOS_DIR = Path("portfolios")
