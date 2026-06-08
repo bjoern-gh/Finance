@@ -45,24 +45,53 @@ Plain Yahoo Finance symbols (e.g. `AAPL`, `MSFT`) are also accepted without a pr
 
 Requires [Docker](https://docs.docker.com/get-docker/) and [Docker Compose](https://docs.docker.com/compose/install/).
 
+### Step 1 — Clone the repo
+
 ```bash
 git clone <repository_url>
 cd Finance
+```
 
-# 1. Create your credentials file from the template
+### Step 2 — Set up user accounts
+
+Copy the credentials template:
+
+```bash
 cp .env.example .env
 ```
 
-Edit `.env` and set your username and a SHA-256 password hash. Generate the hash with:
+Open `.env` in any text editor. You'll see:
+
+```
+AUTH_USERNAME=admin
+AUTH_PASSWORD_HASH=your_sha256_hash_here
+```
+
+Replace `admin` with your chosen username, then generate a hash for your password:
 
 ```bash
 python3 -c "import hashlib; print(hashlib.sha256(b'yourpassword').hexdigest())"
 ```
 
-For two accounts, use the comma-separated form — see `.env.example` for details.
+Paste the output as the value of `AUTH_PASSWORD_HASH`. Example finished `.env`:
+
+```
+AUTH_USERNAME=mladen
+AUTH_PASSWORD_HASH=5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8
+```
+
+**Two accounts** (e.g. you and a friend) — use the plural keys with comma-separated values, keeping the order consistent:
+
+```
+AUTH_USERNAMES=mladen,friend
+AUTH_PASSWORD_HASHES=<hash_for_mladen>,<hash_for_friend>
+```
+
+> `.env` is listed in `.gitignore` and `.dockerignore` — it will never be committed to git or baked into the Docker image.
+
+### Step 3 — Build and start
 
 ```bash
-# 2. Build the image and start both services
 docker-compose up --build -d
 ```
 
