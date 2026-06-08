@@ -1,5 +1,9 @@
+import hashlib
 import io
+import json
+import os
 import re
+import time
 import requests
 import pandas as pd
 import plotly.graph_objects as go
@@ -11,6 +15,61 @@ from financial_analyzer import analyze_tickers, parse_and_convert_tickers, get_p
 
 # ── Page config ──────────────────────────────────────────────────────────────
 st.set_page_config(layout="wide", page_title="Financial Analysis", page_icon="📈")
+
+# ── Auth ──────────────────────────────────────────────────────────────────────
+
+def _get_credentials() -> tuple[list[str], list[str]]:
+    """
+    Return (usernames, password_hashes) from environment variables.
+    Supports multiple accounts via comma-separated values:
+      AUTH_USERNAMES=alice,bob
+      AUTH_PASSWORD_HASHES=<hash_alice>,<hash_bob>
+    Also accepts the singular AUTH_USERNAME / AUTH_PASSWORD_HASH for a single account.
+    """
+    usernames_raw = os.environ.get("AUTH_USERNAMES") or os.environ.get("AUTH_USERNAME", "admin")
+    hashes_raw = os.environ.get("AUTH_PASSWORD_HASHES") or os.environ.get("AUTH_PASSWORD_HASH", "")
+
+    usernames = [u.strip().lower() for u in usernames_raw.split(",") if u.strip()]
+    hashes = [h.strip() for h in hashes_raw.split(",") if h.strip()]
+    return usernames, hashes
+
+
+def _hash(password: str) -> str:
+    return hashlib.sha256(password.encode()).hexdigest()
+
+
+def check_password(username: str, password: str) -> bool:
+    usernames, hashes = _get_credentials()
+    entered_hash = _hash(password)
+    for u, h in zip(usernames, hashes):
+        if username.lower() == u and entered_hash == h:
+            return True
+    return False
+
+
+def render_login():
+    """Full-page login form. Returns True once authenticated."""
+    if st.session_state.get("authenticated"):
+        return True
+
+    col = st.columns([1, 1, 1])[1]
+    with col:
+        st.markdown("<br><br>", unsafe_allow_html=True)
+        st.title("📈 Financial Analysis")
+        st.subheader("Sign in")
+
+        username = st.text_input("Username", key="login_username")
+        password = st.text_input("Password", type="password", key="login_password")
+
+        if st.button("Sign in", type="primary", use_container_width=True):
+            if check_password(username, password):
+                st.session_state.authenticated = True
+                st.session_state.auth_user = username
+                st.rerun()
+            else:
+                st.error("Invalid username or password.")
+
+    return False
 
 # ── Company search via Yahoo Finance API ─────────────────────────────────────
 
@@ -268,6 +327,10 @@ def resolve_import_entries(entries: list[str]) -> tuple[list[dict], list[str]]:
 # ── Session state init ────────────────────────────────────────────────────────
 
 def init_state():
+    if "authenticated" not in st.session_state:
+        st.session_state.authenticated = False
+    if "auth_user" not in st.session_state:
+        st.session_state.auth_user = ""
     if "current_portfolio" not in st.session_state:
         portfolios = pm.list_portfolios()
         st.session_state.current_portfolio = portfolios[0] if portfolios else None
@@ -281,6 +344,8 @@ def init_state():
         st.session_state.renaming_portfolio = False
     if "import_preview" not in st.session_state:
         st.session_state.import_preview = None
+    if "portfolio_import_preview" not in st.session_state:
+        st.session_state.portfolio_import_preview = None
 
 
 def get_current_tickers() -> list[dict]:
@@ -292,6 +357,14 @@ def get_current_tickers() -> list[dict]:
 # ── Sidebar — portfolio management ───────────────────────────────────────────
 
 def render_sidebar():
+    # User info + logout
+    st.sidebar.caption(f"Signed in as **{st.session_state.auth_user}**")
+    if st.sidebar.button("Sign out", use_container_width=True):
+        st.session_state.authenticated = False
+        st.session_state.auth_user = ""
+        st.rerun()
+
+    st.sidebar.divider()
     st.sidebar.title("📁 Portfolios")
 
     portfolios = pm.list_portfolios()
@@ -466,6 +539,73 @@ def render_build_tab():
                 st.session_state.analysis_results = None
                 st.rerun()
 
+    st.divider()
+
+    # ── Portfolio export / import ──
+    st.subheader("📤 Export / Import Portfolio")
+    exp_col, imp_col = st.columns(2)
+
+    with exp_col:
+        st.markdown("**Export**")
+        st.caption("Download this portfolio as a JSON file to share or back up.")
+        portfolio_data = pm.load_portfolio(portfolio_name)
+        export_bytes = json.dumps(portfolio_data, indent=2, ensure_ascii=False).encode("utf-8")
+        st.download_button(
+            label=f"⬇️ Export '{portfolio_name}'",
+            data=export_bytes,
+            file_name=f"{portfolio_name}.json",
+            mime="application/json",
+            use_container_width=True,
+        )
+
+    with imp_col:
+        st.markdown("**Import portfolio from file**")
+        st.caption("Upload a previously exported portfolio JSON. You can rename it before saving.")
+        portfolio_file = st.file_uploader(
+            "Choose portfolio JSON", type=["json"], key="portfolio_json_upload",
+            label_visibility="collapsed",
+        )
+
+        if portfolio_file and st.session_state.portfolio_import_preview is None:
+            try:
+                raw = json.loads(portfolio_file.read().decode("utf-8"))
+                # Validate basic schema
+                if not isinstance(raw.get("tickers"), list):
+                    st.error("Invalid portfolio file: missing 'tickers' list.")
+                else:
+                    st.session_state.portfolio_import_preview = raw
+                    st.rerun()
+            except Exception as e:
+                st.error(f"Could not read file: {e}")
+
+        if st.session_state.portfolio_import_preview:
+            raw = st.session_state.portfolio_import_preview
+            suggested_name = raw.get("name", "Imported Portfolio")
+            existing = pm.list_portfolios()
+
+            import_name = st.text_input(
+                "Save as:", value=suggested_name, key="portfolio_import_name"
+            )
+            ticker_count = len(raw.get("tickers", []))
+            st.caption(f"{ticker_count} stock{'s' if ticker_count != 1 else ''} in this portfolio")
+
+            warn = import_name.strip() in existing
+            if warn:
+                st.warning(f"A portfolio named '{import_name.strip()}' already exists — it will be overwritten.")
+
+            ci1, ci2 = st.columns(2)
+            if ci1.button("✅ Save", type="primary", use_container_width=True):
+                if import_name.strip():
+                    pm.save_portfolio(import_name.strip(), raw["tickers"])
+                    st.session_state.current_portfolio = import_name.strip()
+                    st.session_state.portfolio_import_preview = None
+                    st.session_state.analysis_results = None
+                    st.success(f"Portfolio '{import_name.strip()}' imported.")
+                    st.rerun()
+            if ci2.button("Cancel", use_container_width=True):
+                st.session_state.portfolio_import_preview = None
+                st.rerun()
+
 
 # ── Tab: Analysis ─────────────────────────────────────────────────────────────
 
@@ -603,6 +743,10 @@ def render_charts_tab():
 
 def main():
     init_state()
+
+    if not render_login():
+        return
+
     render_sidebar()
 
     st.title("📈 Financial Analysis")

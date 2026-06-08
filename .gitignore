@@ -17,4 +17,7 @@ venv/
 
 # Portfolio data (persisted via Docker volume, not committed to git)
 portfolios/
+
+# Environment secrets — never commit the real .env, only .env.example
+.env
 ticker.txt

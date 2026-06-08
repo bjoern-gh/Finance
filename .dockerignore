@@ -25,6 +25,9 @@ dev-requirements.txt
 # Tests
 tests/
 
+# Secrets — never bake into image
+.env
+
 # Misc
 *.log
 *.csv

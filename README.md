@@ -49,7 +49,20 @@ Requires [Docker](https://docs.docker.com/get-docker/) and [Docker Compose](http
 git clone <repository_url>
 cd Finance
 
-# Build the image and start both services in the background
+# 1. Create your credentials file from the template
+cp .env.example .env
+```
+
+Edit `.env` and set your username and a SHA-256 password hash. Generate the hash with:
+
+```bash
+python3 -c "import hashlib; print(hashlib.sha256(b'yourpassword').hexdigest())"
+```
+
+For two accounts, use the comma-separated form — see `.env.example` for details.
+
+```bash
+# 2. Build the image and start both services
 docker-compose up --build -d
 ```
 
@@ -172,7 +185,14 @@ LSE:SHEL
 
 The app will search unrecognised lines as company names and show you a confirmation table before adding anything.
 
-### 3. Run analysis
+### 3. Export and share a portfolio
+
+At the bottom of the **Build Portfolio** tab there is an **Export / Import** section.
+
+- **Export** — downloads the current portfolio as a `<name>.json` file. Send this file to a colleague or import it on another instance.
+- **Import** — upload a previously exported `.json` file. You can rename it before saving. If a portfolio with that name already exists you will be warned before it is overwritten.
+
+### 4. Run analysis
 
 Switch to the **Analysis** tab and click **▶ Run Analysis**. Results are cached for 5 minutes — clicking the button again within that window returns instantly. Download the table as CSV or Excel using the buttons below the results.
 
