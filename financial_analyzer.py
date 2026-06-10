@@ -90,7 +90,7 @@ EXCHANGE_MAP = {
     "SWX": ".SW",      # SIX Swiss Exchange
 }
 
-# Build the prefix pattern dynamically
+# Build the prefix pattern dynamically - match uppercase letters only, not lowercase
 _PREFIX_PATTERN = r"(?:" + "|".join(re.escape(p) for p in EXCHANGE_MAP.keys()) + r"):[A-Z0-9]+"
 
 
@@ -113,8 +113,8 @@ def parse_and_convert_tickers(data_string: str) -> list[tuple[str, str]]:
     Supports: FRA, ETR, CVE, TSX, NYSE, NASDAQ, LSE, EPA, AMS, BIT, BME, ASX, HKG, TYO, SWX.
     """
     converted = []
-    # Find all valid ticker patterns in the string
-    matches = re.finditer(_PREFIX_PATTERN, data_string)
+    # Find all valid ticker patterns in the string using word boundaries
+    matches = re.finditer(r'\b' + _PREFIX_PATTERN + r'\b', data_string)
     
     for match in matches:
         full_ticker = match.group()  # e.g., "FRA:R5A"
@@ -128,7 +128,7 @@ def parse_and_convert_tickers(data_string: str) -> list[tuple[str, str]]:
     return converted
 
 
-# ── Metric calculation helpers ──────────────────────────────────────────────
+# ── Metric calculation helpers ─────────────────────────────────���────────────
 
 def _calculate_sma(hist: pd.DataFrame, period: int) -> float:
     """Calculate Simple Moving Average for the given period."""
@@ -215,7 +215,7 @@ def _determine_trend_status(
 ) -> str:
     """
     Determine trend signal using SMA200, SMA50, RSI and P/E.
-    Signals: STRONG BUY | BULLISH | OVERBOUGHT | HOLD | BEARISH | STRONG SELL
+    Signals: STRONG BUY | BULLISH | OVERBOUGHT | HOLD | BEARISH
     """
     if pd.isna(curr_p) or pd.isna(sma200):
         return "HOLD"
@@ -311,7 +311,7 @@ def get_financial_metrics(ticker_tuple: tuple[str, str]) -> dict:
         "SMA50": pd.NA,
         "RSI": pd.NA,
         "P/E (KGV)": pd.NA,
-        "Trend": "HOLD",
+        "Trend": "N/A",
         "ATH/ATL": "N/A",
         "Valuation": "N/A",
         "Currency": "N/A",
@@ -402,7 +402,7 @@ def get_financial_metrics(ticker_tuple: tuple[str, str]) -> dict:
     return {**_empty, "Company": company_name, "Status": "Unknown error"}
 
 
-# ── Batch analyzer ─────────────────────────────────────────────────────────[...]
+# ── Batch analyzer ─────────────────────────────────────────────────────────
 
 def analyze_tickers(ticker_tuples_list: list[tuple[str, str]]) -> pd.DataFrame:
     """
