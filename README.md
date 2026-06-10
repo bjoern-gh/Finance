@@ -324,4 +324,12 @@ pytest
 black .           # Format
 ruff check .      # Lint
 ruff check . --fix  # Auto-fix lint issues
+
+## Contributing
+Your help is appreciated! If you find a bug or have a suggestion for improvement, please open an issue. To contribute code changes:
+1. Fork the repository.
+2. Create a new branch (`git checkout -b feature/AmazingFeature`).
+3. Commit your changes (`git commit -m 'Add some AmazingFeature'`).
+4. Push to the branch (`git push origin feature/AmazingFeature`).
+5. Open a Pull Request.
 ```
