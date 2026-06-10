@@ -8,6 +8,8 @@ import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import streamlit as st
+import configparser
+import logging
 
 import portfolio_manager as pm
 from financial_analyzer import analyze_tickers, parse_and_convert_tickers, get_price_history
@@ -19,18 +21,39 @@ st.set_page_config(layout="wide", page_title="Financial Analysis", page_icon="ðŸ
 
 def _get_credentials() -> tuple[list[str], list[str]]:
     """
-    Return (usernames, password_hashes) from environment variables.
-    Supports multiple accounts via comma-separated values:
-      AUTH_USERNAMES=alice,bob
-      AUTH_PASSWORD_HASHES=<hash_alice>,<hash_bob>
-    Also accepts the singular AUTH_USERNAME / AUTH_PASSWORD_HASH for a single account.
+    Return (usernames, password_hashes) from env vars, config.ini [Auth], or sensible defaults.
+    Priority: ENV vars > config.ini > built-in default (admin / 'admin').
     """
-    usernames_raw = os.environ.get("AUTH_USERNAMES") or os.environ.get("AUTH_USERNAME", "admin")
-    hashes_raw = os.environ.get("AUTH_PASSWORD_HASHES") or os.environ.get("AUTH_PASSWORD_HASH", "")
+    # 1) Environment variables (explicit override)
+    usernames_raw = os.environ.get("AUTH_USERNAMES") or os.environ.get("AUTH_USERNAME")
+    hashes_raw = os.environ.get("AUTH_PASSWORD_HASHES") or os.environ.get("AUTH_PASSWORD_HASH")
+    if usernames_raw and hashes_raw:
+        usernames = [u.strip().lower() for u in usernames_raw.split(",") if u.strip()]
+        hashes = [h.strip() for h in hashes_raw.split(",") if h.strip()]
+        return usernames, hashes
 
-    usernames = [u.strip().lower() for u in usernames_raw.split(",") if u.strip()]
-    hashes = [h.strip() for h in hashes_raw.split(",") if h.strip()]
-    return usernames, hashes
+    # 2) config.ini [Auth] section
+    try:
+        cfg = configparser.ConfigParser()
+        cfg.read("config.ini")
+        if cfg.has_section("Auth"):
+            usernames_raw = cfg.get("Auth", "usernames", fallback=None) or cfg.get("Auth", "username", fallback=None)
+            hashes_raw = cfg.get("Auth", "password_hashes", fallback=None) or cfg.get("Auth", "password_hash", fallback=None)
+            if usernames_raw and hashes_raw:
+                usernames = [u.strip().lower() for u in usernames_raw.split(",") if u.strip()]
+                hashes = [h.strip() for h in hashes_raw.split(",") if h.strip()]
+                return usernames, hashes
+    except Exception:
+        # If config parsing fails, ignore and fall back to defaults
+        pass
+
+    # 3) Fallback default account (local development only)
+    # WARNING: These defaults are intentionally simple for local/dev use. Change them by setting
+    # AUTH_USERNAME/AUTH_PASSWORD_HASH env vars or adding an [Auth] section to config.ini.
+    default_user = "admin"
+    default_pass = "admin"
+    logging.warning("No auth configured; using default credentials 'admin' / 'admin'. Change immediately for production.")
+    return [default_user], [_hash(default_pass)]
 
 
 def _hash(password: str) -> str:
