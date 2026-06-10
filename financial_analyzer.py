@@ -107,33 +107,24 @@ def format_large_number(num):
 
 def parse_and_convert_tickers(data_string: str) -> list[tuple[str, str]]:
     """
-    Extract ticker symbols from a raw string (comma-separated) and convert to Yahoo Finance format.
+    Extract ticker symbols from a raw string and convert to Yahoo Finance format.
+    Uses regex to find all valid tickers (exchange:symbol format).
     Returns list of (original_ticker, yahoo_symbol) tuples.
-    Supports: FRA, ETR, CVE, TSX, NYSE, NASDAQ, LSE, EPA, AMS, BIT, BME, ASX, HKG, TYO, SWX,
-    and plain Yahoo Finance symbols.
+    Supports: FRA, ETR, CVE, TSX, NYSE, NASDAQ, LSE, EPA, AMS, BIT, BME, ASX, HKG, TYO, SWX.
     """
     converted = []
-    # Split the string by commas and process each ticker
-    for t_str in data_string.split(','):
-        t_str = t_str.strip()
-        if not t_str:
-            continue
-
-        original_ticker = t_str
-        yahoo_symbol = t_str
-
-        # Check if the ticker has a prefix (e.g., FRA:R5A)
-        if ":" in t_str:
-            parts = t_str.split(":", 1)
-            if len(parts) == 2:
-                prefix, symbol = parts
-                suffix = EXCHANGE_MAP.get(prefix.upper()) # Use .upper() for robustness
-                if suffix is not None: # Check if prefix is in EXCHANGE_MAP
-                    yahoo_symbol = symbol + suffix
-                # If prefix not in map, treat as plain Yahoo symbol (e.g., custom exchange:symbol)
-                # In this case, yahoo_symbol remains t_str
-        
-        converted.append((original_ticker, yahoo_symbol))
+    # Find all valid ticker patterns in the string
+    matches = re.finditer(_PREFIX_PATTERN, data_string)
+    
+    for match in matches:
+        full_ticker = match.group()  # e.g., "FRA:R5A"
+        parts = full_ticker.split(":", 1)
+        if len(parts) == 2:
+            prefix, symbol = parts
+            suffix = EXCHANGE_MAP.get(prefix.upper(), "")
+            yahoo_symbol = symbol + suffix
+            converted.append((full_ticker, yahoo_symbol))
+    
     return converted
 
 
@@ -320,7 +311,7 @@ def get_financial_metrics(ticker_tuple: tuple[str, str]) -> dict:
         "SMA50": pd.NA,
         "RSI": pd.NA,
         "P/E (KGV)": pd.NA,
-        "Trend": "N/A",
+        "Trend": "HOLD",
         "ATH/ATL": "N/A",
         "Valuation": "N/A",
         "Currency": "N/A",
@@ -411,7 +402,7 @@ def get_financial_metrics(ticker_tuple: tuple[str, str]) -> dict:
     return {**_empty, "Company": company_name, "Status": "Unknown error"}
 
 
-# ── Batch analyzer ───────────────────────────────────────────────────────────
+# ── Batch analyzer ─────────────────────────────────────────────────────────[...]
 
 def analyze_tickers(ticker_tuples_list: list[tuple[str, str]]) -> pd.DataFrame:
     """
