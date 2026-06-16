@@ -83,9 +83,7 @@ def main():
             logging.warning(
                 "\n" + failed_df[existing_error_cols].to_string(index=False)
             )
-            logging.warning(
-                f"\n({len(failed_df)} tickers could not be loaded.)"
-            )
+            logging.warning(f"\n({len(failed_df)} tickers could not be loaded.)")
     else:
         logging.error("No data found or errors in all queries.")
 
@@ -93,9 +91,7 @@ def main():
     if OUTPUT_CSV and not df.empty:
         try:
             df.to_csv(OUTPUT_CSV_FILENAME, index=False, encoding="utf-8")
-            logging.info(
-                f"Results successfully saved to '{OUTPUT_CSV_FILENAME}'."
-            )
+            logging.info(f"Results successfully saved to '{OUTPUT_CSV_FILENAME}'.")
         except Exception as e:
             logging.error(f"Error saving CSV file: {e}")
 

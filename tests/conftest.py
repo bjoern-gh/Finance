@@ -1,4 +1,5 @@
 """Pytest configuration and fixtures."""
+
 import os
 import sys
 import pytest
@@ -22,7 +23,7 @@ def setup_test_environment():
 @pytest.fixture
 def mock_config():
     """Mock configparser for consistent test configuration."""
-    with patch('financial_analyzer.config') as mock:
+    with patch("financial_analyzer.config") as mock:
         mock.get.return_value = "1y"
         mock.getint.side_effect = lambda section, option, fallback=None: {
             ("General", "sma_period"): 200,

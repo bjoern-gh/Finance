@@ -63,7 +63,9 @@ def _get_eur_rate(currency: str) -> float:
                 _eur_rate_cache[lookup] = float(hist["Close"].iloc[-1])
             else:
                 _eur_rate_cache[lookup] = 1.0  # fallback: treat as 1:1
-                logging.warning(f"FX rate not found for {lookup}EUR=X, defaulting to 1.0")
+                logging.warning(
+                    f"FX rate not found for {lookup}EUR=X, defaulting to 1.0"
+                )
         except Exception as e:
             _eur_rate_cache[lookup] = 1.0
             logging.warning(f"FX rate fetch failed for {lookup}: {e}")
@@ -71,27 +73,30 @@ def _get_eur_rate(currency: str) -> float:
     rate = _eur_rate_cache[lookup]
     return rate / 100 if pence else rate
 
+
 # Exchange prefix → Yahoo Finance suffix mapping
 EXCHANGE_MAP = {
-    "FRA": ".F",       # Frankfurt
-    "ETR": ".DE",      # XETRA (Deutsche Börse)
-    "CVE": ".V",       # TSX Venture Exchange (Canada)
-    "TSX": ".TO",      # Toronto Stock Exchange
-    "NYSE": "",        # New York Stock Exchange (no suffix)
-    "NASDAQ": "",      # NASDAQ (no suffix)
-    "LSE": ".L",       # London Stock Exchange
-    "EPA": ".PA",      # Euronext Paris
-    "AMS": ".AS",      # Euronext Amsterdam
-    "BIT": ".MI",      # Borsa Italiana (Milan)
-    "BME": ".MC",      # Bolsa de Madrid
-    "ASX": ".AX",      # Australian Securities Exchange
-    "HKG": ".HK",      # Hong Kong Stock Exchange
-    "TYO": ".T",       # Tokyo Stock Exchange
-    "SWX": ".SW",      # SIX Swiss Exchange
+    "FRA": ".F",  # Frankfurt
+    "ETR": ".DE",  # XETRA (Deutsche Börse)
+    "CVE": ".V",  # TSX Venture Exchange (Canada)
+    "TSX": ".TO",  # Toronto Stock Exchange
+    "NYSE": "",  # New York Stock Exchange (no suffix)
+    "NASDAQ": "",  # NASDAQ (no suffix)
+    "LSE": ".L",  # London Stock Exchange
+    "EPA": ".PA",  # Euronext Paris
+    "AMS": ".AS",  # Euronext Amsterdam
+    "BIT": ".MI",  # Borsa Italiana (Milan)
+    "BME": ".MC",  # Bolsa de Madrid
+    "ASX": ".AX",  # Australian Securities Exchange
+    "HKG": ".HK",  # Hong Kong Stock Exchange
+    "TYO": ".T",  # Tokyo Stock Exchange
+    "SWX": ".SW",  # SIX Swiss Exchange
 }
 
 # Build the prefix pattern dynamically - match uppercase letters only, not lowercase
-_PREFIX_PATTERN = r"(?:" + "|".join(re.escape(p) for p in EXCHANGE_MAP.keys()) + r"):[A-Z0-9]+"
+_PREFIX_PATTERN = (
+    r"(?:" + "|".join(re.escape(p) for p in EXCHANGE_MAP.keys()) + r"):[A-Z0-9]+"
+)
 
 
 def format_large_number(num):
@@ -146,6 +151,7 @@ def parse_and_convert_tickers(data_string: str) -> list[tuple[str, str]]:
 
 # ── Metric calculation helpers ─────────────────────────────────���────────────
 
+
 def _calculate_sma(hist: pd.DataFrame, period: int) -> float:
     """Calculate Simple Moving Average for the given period."""
     if hist.empty or len(hist) < period:
@@ -162,7 +168,7 @@ def _calculate_rsi(hist: pd.DataFrame, period: int = 14) -> float:
     """
     if hist.empty or len(hist) < 2:
         return pd.NA
-    
+
     delta = hist["Close"].diff()
     gain = delta.clip(lower=0)
     loss = -delta.clip(upper=0)
@@ -204,7 +210,9 @@ def _calculate_pe_ratio(info: dict, curr_p: float) -> float:
     return pe_v
 
 
-def _determine_ath_atl_status(hist_max: pd.DataFrame, curr_p: float, threshold_pct: int) -> str:
+def _determine_ath_atl_status(
+    hist_max: pd.DataFrame, curr_p: float, threshold_pct: int
+) -> str:
     """Determine if current price is near All-Time High or Low."""
     if hist_max.empty or pd.isna(curr_p):
         return "N/A"
@@ -249,9 +257,7 @@ def _determine_valuation_status(
     return status
 
 
-def _determine_trend_status(
-    curr_p, sma200, sma50, rsi, pe_v, kgv_max: int
-) -> str:
+def _determine_trend_status(curr_p, sma200, sma50, rsi, pe_v, kgv_max: int) -> str:
     """
     Determine trend signal using SMA200, SMA50, RSI and P/E.
     Signals: STRONG BUY | BULLISH | OVERBOUGHT | HOLD | BEARISH
@@ -261,9 +267,7 @@ def _determine_trend_status(
 
     above_sma200 = curr_p > sma200
     # Only consider SMA50 if we have valid PE data (when PE is missing, use stricter threshold)
-    above_sma50 = (
-        (not pd.isna(sma50)) and (curr_p > sma50) and (not pd.isna(pe_v))
-    )
+    above_sma50 = (not pd.isna(sma50)) and (curr_p > sma50) and (not pd.isna(pe_v))
     rsi_ok = pd.isna(rsi) or (30 <= rsi <= 70)
     rsi_overbought = (not pd.isna(rsi)) and rsi > 70
     rsi_oversold = (not pd.isna(rsi)) and rsi < 30
@@ -284,7 +288,9 @@ def _determine_trend_status(
     return "HOLD"
 
 
-def _get_optional_metrics(info: dict, include_dividend: bool = None, include_market_cap: bool = None) -> dict:
+def _get_optional_metrics(
+    info: dict, include_dividend: bool = None, include_market_cap: bool = None
+) -> dict:
     """Fetch optional metrics: dividend yield, market cap, D/E, growth, margin, beta, sector."""
     result = {}
 
@@ -342,6 +348,7 @@ def _get_52w_metrics(info: dict, curr_p: float) -> dict:
 
 # ── Main data fetcher ────────────────────────────────────────────────────────
 
+
 def get_financial_metrics(ticker_tuple: tuple[str, str]) -> dict:
     """
     Fetch data from Yahoo Finance and compute all metrics for one ticker.
@@ -390,13 +397,19 @@ def get_financial_metrics(ticker_tuple: tuple[str, str]) -> dict:
 
     # Read config values at call time so tests can patch `financial_analyzer.config`
     sma_period = config.getint("General", "sma_period", fallback=SMA_PERIOD)
-    sma_short_period = config.getint("General", "sma_short_period", fallback=SMA_SHORT_PERIOD)
+    sma_short_period = config.getint(
+        "General", "sma_short_period", fallback=SMA_SHORT_PERIOD
+    )
     rsi_period = config.getint("General", "rsi_period", fallback=RSI_PERIOD)
     kgv_max = config.getint("General", "kgv_max_threshold", fallback=KGV_MAX_THRESHOLD)
     history_period = config.get("General", "history_period", fallback=HISTORY_PERIOD)
     retries_local = config.getint("General", "retries", fallback=RETRIES)
-    retry_delay_local = config.getint("General", "retry_delay_seconds", fallback=RETRY_DELAY_SECONDS)
-    ath_threshold = config.getint("General", "ath_atl_threshold_percent", fallback=ATH_ATL_THRESHOLD_PERCENT)
+    retry_delay_local = config.getint(
+        "General", "retry_delay_seconds", fallback=RETRY_DELAY_SECONDS
+    )
+    ath_threshold = config.getint(
+        "General", "ath_atl_threshold_percent", fallback=ATH_ATL_THRESHOLD_PERCENT
+    )
     try:
         pe_cheap = config.getfloat("General", "pe_cheap_threshold")
     except TypeError:
@@ -410,8 +423,16 @@ def get_financial_metrics(ticker_tuple: tuple[str, str]) -> dict:
     except TypeError:
         peg_max = PEG_MAX_THRESHOLD
     # Respect test mocks that patch config.getboolean without fallback
-    include_dividend = config.getboolean("Metrics", "include_dividend_yield") if hasattr(config, "getboolean") else INCLUDE_DIVIDEND_YIELD
-    include_marketcap = config.getboolean("Metrics", "include_market_cap") if hasattr(config, "getboolean") else INCLUDE_MARKET_CAP
+    include_dividend = (
+        config.getboolean("Metrics", "include_dividend_yield")
+        if hasattr(config, "getboolean")
+        else INCLUDE_DIVIDEND_YIELD
+    )
+    include_marketcap = (
+        config.getboolean("Metrics", "include_market_cap")
+        if hasattr(config, "getboolean")
+        else INCLUDE_MARKET_CAP
+    )
 
     for attempt in range(retries_local):
         try:
@@ -438,18 +459,20 @@ def get_financial_metrics(ticker_tuple: tuple[str, str]) -> dict:
             sma50 = _calculate_sma(hist_short, sma_short_period)
             rsi_reported = _calculate_rsi(hist_short, rsi_period)
             # For trend decisions, only use RSI if we have a full period available
-            rsi_for_trend = (
-                rsi_reported if len(hist_short) >= rsi_period + 1 else pd.NA
-            )
+            rsi_for_trend = rsi_reported if len(hist_short) >= rsi_period + 1 else pd.NA
             pe_v = _calculate_pe_ratio(info, curr_p)
             ath_atl = _determine_ath_atl_status(hist_max, curr_p, ath_threshold)
             # Apply a small tolerance to PEG threshold in the integrated metric
             # to better match user-facing expectations in get_financial_metrics tests.
-            peg_tolerance_factor = 3.0 if (include_dividend and include_marketcap) else 1.0
+            peg_tolerance_factor = (
+                3.0 if (include_dividend and include_marketcap) else 1.0
+            )
             valuation = _determine_valuation_status(
                 pe_v, info, pe_cheap, pe_expensive, peg_max * peg_tolerance_factor
             )
-            trend = _determine_trend_status(curr_p, sma200, sma50, rsi_for_trend, pe_v, kgv_max)
+            trend = _determine_trend_status(
+                curr_p, sma200, sma50, rsi_for_trend, pe_v, kgv_max
+            )
             optional = _get_optional_metrics(info, include_dividend, include_marketcap)
             w52 = _get_52w_metrics(info, curr_p)
 
@@ -463,7 +486,11 @@ def get_financial_metrics(ticker_tuple: tuple[str, str]) -> dict:
                 "SMA200": round(sma200, 2) if not pd.isna(sma200) else pd.NA,
                 "SMA50": round(sma50, 2) if not pd.isna(sma50) else pd.NA,
                 "RSI": rsi_reported,
-                "P/E (KGV)": round(pe_v, 2) if isinstance(pe_v, (int, float)) and not pd.isna(pe_v) else pd.NA,
+                "P/E (KGV)": (
+                    round(pe_v, 2)
+                    if isinstance(pe_v, (int, float)) and not pd.isna(pe_v)
+                    else pd.NA
+                ),
                 "Trend": trend,
                 "ATH/ATL": ath_atl,
                 "Valuation": valuation,
@@ -474,16 +501,23 @@ def get_financial_metrics(ticker_tuple: tuple[str, str]) -> dict:
             return result
 
         except Exception as e:
-            logging.error(f"[{original_ticker}] Error attempt {attempt + 1}/{retries_local}: {e}")
+            logging.error(
+                f"[{original_ticker}] Error attempt {attempt + 1}/{retries_local}: {e}"
+            )
             if attempt < retries_local - 1:
                 time.sleep(retry_delay_local)
             else:
-                return {**_empty, "Company": company_name, "Status": f"Failed after {retries_local} attempts: {e}"}
+                return {
+                    **_empty,
+                    "Company": company_name,
+                    "Status": f"Failed after {retries_local} attempts: {e}",
+                }
 
     return {**_empty, "Company": company_name, "Status": "Unknown error"}
 
 
 # ── Batch analyzer ─────────────────────────────────────────────────────────
+
 
 def analyze_tickers(ticker_tuples_list: list[tuple[str, str]]) -> pd.DataFrame:
     """
@@ -508,7 +542,9 @@ def analyze_tickers(ticker_tuples_list: list[tuple[str, str]]) -> pd.DataFrame:
 
     if SORT_BY_COLUMN in df.columns:
         df[SORT_BY_COLUMN] = pd.to_numeric(df[SORT_BY_COLUMN], errors="coerce")
-        df = df.sort_values(by=SORT_BY_COLUMN, ascending=SORT_ASCENDING, na_position="last")
+        df = df.sort_values(
+            by=SORT_BY_COLUMN, ascending=SORT_ASCENDING, na_position="last"
+        )
     else:
         logging.warning(f"Sort column '{SORT_BY_COLUMN}' not found.")
 

@@ -216,8 +216,9 @@ def test_get_optional_metrics(
     expected_mkt_cap,
 ):
     # Mock the global config variables for these tests
-    with patch('financial_analyzer.INCLUDE_DIVIDEND_YIELD', include_dividend_yield), \
-         patch('financial_analyzer.INCLUDE_MARKET_CAP', include_market_cap):
+    with patch(
+        "financial_analyzer.INCLUDE_DIVIDEND_YIELD", include_dividend_yield
+    ), patch("financial_analyzer.INCLUDE_MARKET_CAP", include_market_cap):
         result = _get_optional_metrics(info)
         div_yield = result.get("Dividend Yield (%)")
         mkt_cap = result.get("Market Cap")
@@ -236,8 +237,24 @@ def test_get_optional_metrics(
 @pytest.mark.parametrize(
     "curr_p, sma200, sma50, rsi, pe_v, kgv_max_threshold, expected_trend",
     [
-        (105, 100, 102, 50, 20, 25, "STRONG BUY"),  # Price > SMA50 > SMA200, RSI ok, PE ok
-        (105, 100, pd.NA, 50, 20, 25, "BULLISH"),  # Price > SMA200, SMA50 NA, RSI ok, PE ok
+        (
+            105,
+            100,
+            102,
+            50,
+            20,
+            25,
+            "STRONG BUY",
+        ),  # Price > SMA50 > SMA200, RSI ok, PE ok
+        (
+            105,
+            100,
+            pd.NA,
+            50,
+            20,
+            25,
+            "BULLISH",
+        ),  # Price > SMA200, SMA50 NA, RSI ok, PE ok
         (105, 100, 102, 80, 20, 25, "OVERBOUGHT"),  # Price > SMA200, RSI overbought
         (105, 100, 102, 50, 30, 25, "HOLD"),  # Price > SMA200, PE too high
         (95, 100, 98, 20, 20, 25, "OVERSOLD"),  # Price < SMA200, RSI oversold
@@ -246,7 +263,9 @@ def test_get_optional_metrics(
         (105, pd.NA, 102, 50, 20, 25, "HOLD"),  # SMA200 is N/A
     ],
 )
-def test_determine_trend_status(curr_p, sma200, sma50, rsi, pe_v, kgv_max_threshold, expected_trend):
+def test_determine_trend_status(
+    curr_p, sma200, sma50, rsi, pe_v, kgv_max_threshold, expected_trend
+):
     trend = _determine_trend_status(curr_p, sma200, sma50, rsi, pe_v, kgv_max_threshold)
     assert trend == expected_trend
 
@@ -264,8 +283,8 @@ def test_get_financial_metrics_success(mock_logging, mock_config, MockTicker):
     mock_config.get.return_value = "1y"
     mock_config.getint.side_effect = lambda section, option, fallback=None: {
         ("General", "sma_period"): 2,
-        ("General", "sma_short_period"): 2, # Added for SMA50
-        ("General", "rsi_period"): 14, # Added for RSI
+        ("General", "sma_short_period"): 2,  # Added for SMA50
+        ("General", "rsi_period"): 14,  # Added for RSI
         ("General", "retries"): 1,
         ("General", "retry_delay_seconds"): 0,
         ("General", "ath_atl_threshold_percent"): 5,
@@ -334,7 +353,7 @@ def test_get_financial_metrics_success(mock_logging, mock_config, MockTicker):
     ]
 
     # Mock _get_eur_rate to return a fixed value for testing
-    with patch('financial_analyzer._get_eur_rate', return_value=0.9): # 1 USD = 0.9 EUR
+    with patch("financial_analyzer._get_eur_rate", return_value=0.9):  # 1 USD = 0.9 EUR
         ticker_tuple = ("NASDAQ:AAPL", "AAPL")
         result = get_financial_metrics(ticker_tuple)
 
@@ -342,14 +361,14 @@ def test_get_financial_metrics_success(mock_logging, mock_config, MockTicker):
         assert result["Yahoo Symbol"] == "AAPL"
         assert result["Company"] == "Apple Inc."
         assert result["Price"] == 105.00
-        assert result["Price (EUR)"] == 94.50 # 105 * 0.9
+        assert result["Price (EUR)"] == 94.50  # 105 * 0.9
         assert result["SMA200"] == 104.50  # (104+105)/2
-        assert result["SMA50"] == 104.50 # (104+105)/2
-        assert result["RSI"] == 100.0 # Mocked data leads to this
+        assert result["SMA50"] == 104.50  # (104+105)/2
+        assert result["RSI"] == 100.0  # Mocked data leads to this
         assert result["P/E (KGV)"] == 25.00
         assert (
             result["Trend"] == "STRONG BUY"
-        ) # Price > SMA50 > SMA200, RSI ok, PE ok (25 < 30)
+        )  # Price > SMA50 > SMA200, RSI ok, PE ok (25 < 30)
         assert (
             result["ATH/ATL"] == "Normal"
         )  # Current price 105, ATH 120, ATL 80. 5% threshold: 120*0.95 = 114, 80*1.05 = 84. 105 is between 84 and 114.
@@ -400,7 +419,7 @@ def test_get_financial_metrics_no_data(mock_logging, mock_config, MockTicker):
         pd.DataFrame(),  # Second call for period="max" (empty)
     ]
 
-    with patch('financial_analyzer._get_eur_rate', return_value=1.0):
+    with patch("financial_analyzer._get_eur_rate", return_value=1.0):
         ticker_tuple = ("NASDAQ:NODATA", "NODATA")
         result = get_financial_metrics(ticker_tuple)
 
@@ -412,7 +431,7 @@ def test_get_financial_metrics_no_data(mock_logging, mock_config, MockTicker):
         assert pd.isna(result["SMA50"])
         assert pd.isna(result["RSI"])
         assert pd.isna(result["P/E (KGV)"])
-        assert result["Trend"] == "HOLD" # Default for insufficient data
+        assert result["Trend"] == "HOLD"  # Default for insufficient data
         assert result["ATH/ATL"] == "N/A"
         assert result["Valuation"] == "N/A"
         assert "Insufficient data (delisted or wrong symbol?)" in result["Status"]
@@ -450,7 +469,7 @@ def test_get_financial_metrics_api_error(mock_logging, mock_config, MockTicker):
         "API Limit Exceeded"
     )  # Simulate API error on history fetch
 
-    with patch('financial_analyzer._get_eur_rate', return_value=1.0):
+    with patch("financial_analyzer._get_eur_rate", return_value=1.0):
         ticker_tuple = ("NASDAQ:ERROR", "ERROR")
         result = get_financial_metrics(ticker_tuple)
 
@@ -529,7 +548,7 @@ def test_get_financial_metrics_kgv_threshold(mock_logging, mock_config, MockTick
         mock_hist_df_max,  # Second call for period="max"
     ]
 
-    with patch('financial_analyzer._get_eur_rate', return_value=1.0):
+    with patch("financial_analyzer._get_eur_rate", return_value=1.0):
         ticker_tuple = ("NASDAQ:HIGHKGV", "HIGHKGV")
         result = get_financial_metrics(ticker_tuple)
 
@@ -543,7 +562,9 @@ def test_get_financial_metrics_kgv_threshold(mock_logging, mock_config, MockTick
         assert result["P/E (KGV)"] == 25.00
         assert result["Trend"] == "HOLD"  # KGV is above threshold, so not BULLISH
         assert result["ATH/ATL"] == "Normal"
-        assert result["Valuation"] == "Fair (High PEG)"  # PE 25 (Fair), PEG 2.5 (High PEG)
+        assert (
+            result["Valuation"] == "Fair (High PEG)"
+        )  # PE 25 (Fair), PEG 2.5 (High PEG)
         assert result["Status"] == "OK"
 
 
@@ -610,7 +631,7 @@ def test_get_financial_metrics_no_pe_but_eps(mock_logging, mock_config, MockTick
         mock_hist_df_max,  # Second call for period="max"
     ]
 
-    with patch('financial_analyzer._get_eur_rate', return_value=1.0):
+    with patch("financial_analyzer._get_eur_rate", return_value=1.0):
         ticker_tuple = ("NASDAQ:EPSONLY", "EPSONLY")
         result = get_financial_metrics(ticker_tuple)
 
@@ -624,7 +645,9 @@ def test_get_financial_metrics_no_pe_but_eps(mock_logging, mock_config, MockTick
         assert result["P/E (KGV)"] == 25.00
         assert result["Trend"] == "BEARISH"  # Price 100 is not > SMA 102
         assert result["ATH/ATL"] == "Normal"
-        assert result["Valuation"] == "Fair (High PEG)"  # PE 25 (Fair), PEG 2.5 (High PEG)
+        assert (
+            result["Valuation"] == "Fair (High PEG)"
+        )  # PE 25 (Fair), PEG 2.5 (High PEG)
         assert result["Status"] == "OK"
 
 
@@ -691,7 +714,7 @@ def test_get_financial_metrics_no_pe_no_eps(mock_logging, mock_config, MockTicke
         mock_hist_df_max,  # Second call for period="max"
     ]
 
-    with patch('financial_analyzer._get_eur_rate', return_value=1.0):
+    with patch("financial_analyzer._get_eur_rate", return_value=1.0):
         ticker_tuple = ("NASDAQ:NOPEEPS", "NOPEEPS")
         result = get_financial_metrics(ticker_tuple)
 
