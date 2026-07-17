@@ -536,11 +536,44 @@ def analyze_tickers(ticker_tuples_list: list[tuple[str, str]]) -> pd.DataFrame:
 
     df = pd.DataFrame(results)
 
-    if SORT_BY_COLUMN in df.columns:
-        df[SORT_BY_COLUMN] = pd.to_numeric(df[SORT_BY_COLUMN], errors="coerce")
-        df = df.sort_values(
-            by=SORT_BY_COLUMN, ascending=SORT_ASCENDING, na_position="last"
-        )
+    sort_column = SORT_BY_COLUMN
+    alias_map = {
+        "KGV": "P/E (KGV)",
+        "PE": "P/E (KGV)",
+        "P/E": "P/E (KGV)",
+        "Ticker": "Original Ticker",
+        "Symbol": "Yahoo Symbol",
+    }
+    if sort_column in alias_map:
+        sort_column = alias_map[sort_column]
+
+    if sort_column in df.columns:
+        numeric_cols = [
+            "Price",
+            "Price (EUR)",
+            "SMA200",
+            "SMA50",
+            "RSI",
+            "P/E (KGV)",
+            "Dividend Yield (%)",
+            "52W High (%)",
+            "52W Low (%)",
+            "D/E Ratio",
+            "Revenue Growth (%)",
+            "Profit Margin (%)",
+            "Beta",
+        ]
+        try:
+            df = df.sort_values(
+                by=sort_column,
+                ascending=SORT_ASCENDING,
+                na_position="last",
+                key=lambda col: pd.to_numeric(col, errors="coerce") if col.name in numeric_cols else col
+            )
+        except Exception:
+            df = df.sort_values(
+                by=sort_column, ascending=SORT_ASCENDING, na_position="last"
+            )
     else:
         logging.warning(f"Sort column '{SORT_BY_COLUMN}' not found.")
 

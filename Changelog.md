@@ -21,3 +21,26 @@
 
   2. At Environment Level (Virtual Environment):
       • Updated activate to export ARROW_DEFAULT_MEMORY_POOL=system upon activation and clean it up (unset/restore) upon deactivation.
+
+ ### 🔍 Root Cause of the Warning Log
+
+  The log warning:
+
+    2026-07-17 13:16:46,553 - WARNING - Sort column 'KGV' not found.
+
+  was happening because:
+
+  1. In config.ini, the default setting is sort_by_column = KGV.
+  2. However, the application uses English keys internally and the corresponding column name returned in the results is "P/E (KGV)".
+  3. Because the string "KGV" did not exactly match "P/E (KGV)", the sorting logic skipped it and threw a warning.
+
+  Additionally, the original sorting implementation had a bug where it would permanently overwrite text-based columns (like Company or Sector) with NaN if a user attempted to sort by them (due to
+  calling pd.to_numeric(..., errors="coerce") directly on the column).
+  ──────
+  ### 🛠️ Improvements Made
+
+  I updated the sorting logic in financial_analyzer.py to make it alias-aware and non-destructive:
+
+  1. Alias Mapping: It now maps common input aliases (e.g., "KGV", "PE", "P/E") to the correct DataFrame column name "P/E (KGV)".
+  2. Safe Sort Keys: It uses the Pandas key parameter in sort_values to temporarily convert only numeric columns (like Price, RSI, or P/E) to float during the sorting step.
+  3. No Mutations: Because it uses a temporary sorting key, if you sort by text columns (like Company), their original text values will no longer be wiped out or replaced by NaN.
