@@ -1,4 +1,5 @@
 import os
+
 os.environ["ARROW_DEFAULT_MEMORY_POOL"] = "system"
 
 import hashlib
@@ -462,9 +463,7 @@ def render_sidebar():
         st.session_state.creating_portfolio = True
         st.session_state.renaming_portfolio = False
 
-    if st.session_state.current_portfolio and col2.button(
-        "✎ Rename", width="stretch"
-    ):
+    if st.session_state.current_portfolio and col2.button("✎ Rename", width="stretch"):
         st.session_state.renaming_portfolio = True
         st.session_state.creating_portfolio = False
 
@@ -768,6 +767,25 @@ def render_analysis_tab():
         display_cols += [c for c in optional_cols if c in success_df.columns]
         existing_cols = [c for c in display_cols if c in success_df.columns]
 
+        # Filter recommended buys: Valuation contains "Cheap" (case-insensitive) and Trend is "STRONG BUY"
+        is_cheap = (
+            success_df["Valuation"]
+            .astype(str)
+            .str.contains("Cheap", case=False, na=False)
+        )
+        is_strong_buy = success_df["Trend"].astype(str) == "STRONG BUY"
+        recommended_df = success_df[is_cheap & is_strong_buy]
+
+        if not recommended_df.empty:
+            st.markdown("### 🔥 Buying Opportunities")
+            st.caption(
+                "Stocks in your portfolio with a **STRONG BUY** trend and a **Cheap** or **Very Cheap** valuation."
+            )
+            rec_styled = style_dataframe(recommended_df[existing_cols])
+            st.dataframe(rec_styled, width="stretch", hide_index=True)
+            st.markdown("<br>", unsafe_allow_html=True)
+
+        st.markdown("### 📋 Full Portfolio Analysis")
         styled = style_dataframe(success_df[existing_cols])
         st.dataframe(styled, width="stretch", hide_index=True)
 
@@ -787,6 +805,10 @@ def render_analysis_tab():
             success_df[existing_cols].to_excel(
                 writer, index=False, sheet_name="Analysis"
             )
+            if not recommended_df.empty:
+                recommended_df[existing_cols].to_excel(
+                    writer, index=False, sheet_name="Recommended Buys"
+                )
         dl2.download_button(
             "⬇️ Excel",
             data=buffer.getvalue(),

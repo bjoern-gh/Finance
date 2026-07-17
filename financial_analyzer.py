@@ -4,7 +4,6 @@ import re
 import configparser
 import time
 import logging
-from concurrent.futures import ThreadPoolExecutor
 from tqdm import tqdm
 
 # --- Logger setup ---
@@ -568,7 +567,11 @@ def analyze_tickers(ticker_tuples_list: list[tuple[str, str]]) -> pd.DataFrame:
                 by=sort_column,
                 ascending=SORT_ASCENDING,
                 na_position="last",
-                key=lambda col: pd.to_numeric(col, errors="coerce") if col.name in numeric_cols else col
+                key=lambda col: (
+                    pd.to_numeric(col, errors="coerce")
+                    if col.name in numeric_cols
+                    else col
+                ),
             )
         except Exception:
             df = df.sort_values(

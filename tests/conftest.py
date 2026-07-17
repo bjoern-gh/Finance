@@ -1,6 +1,7 @@
 """Pytest configuration and fixtures."""
 
 import os
+
 os.environ["ARROW_DEFAULT_MEMORY_POOL"] = "system"
 import sys
 import pytest
