@@ -528,15 +528,11 @@ def analyze_tickers(ticker_tuples_list: list[tuple[str, str]]) -> pd.DataFrame:
         logging.warning("No tickers provided.")
         return pd.DataFrame()
 
-    logging.info(f"Analyzing {len(ticker_tuples_list)} tickers (parallel).")
+    logging.info(f"Analyzing {len(ticker_tuples_list)} tickers (sequential).")
     results = []
-    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-        for res in tqdm(
-            executor.map(get_financial_metrics, ticker_tuples_list),
-            total=len(ticker_tuples_list),
-            desc="Processing tickers",
-        ):
-            results.append(res)
+    for ticker_tuple in tqdm(ticker_tuples_list, desc="Processing tickers"):
+        res = get_financial_metrics(ticker_tuple)
+        results.append(res)
 
     df = pd.DataFrame(results)
 

@@ -1,7 +1,9 @@
+import os
+os.environ["ARROW_DEFAULT_MEMORY_POOL"] = "system"
+
 import hashlib
 import io
 import json
-import os
 import re
 import requests
 import pandas as pd

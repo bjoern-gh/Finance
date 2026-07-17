@@ -19,23 +19,23 @@ A stock analysis application that fetches live data from Yahoo Finance, calculat
 
 ### Supported exchanges
 
-| Prefix | Exchange | Yahoo suffix |
-|--------|----------|--------------|
-| `FRA:` | Frankfurt | `.F` |
-| `ETR:` | XETRA | `.DE` |
-| `NASDAQ:` | NASDAQ | *(none)* |
-| `NYSE:` | New York Stock Exchange | *(none)* |
-| `LSE:` | London Stock Exchange | `.L` |
-| `CVE:` | TSX Venture (Canada) | `.V` |
-| `TSX:` | Toronto Stock Exchange | `.TO` |
-| `EPA:` | Euronext Paris | `.PA` |
-| `AMS:` | Euronext Amsterdam | `.AS` |
-| `BIT:` | Borsa Italiana (Milan) | `.MI` |
-| `BME:` | Bolsa de Madrid | `.MC` |
-| `ASX:` | Australian Securities Exchange | `.AX` |
-| `HKG:` | Hong Kong Stock Exchange | `.HK` |
-| `TYO:` | Tokyo Stock Exchange | `.T` |
-| `SWX:` | SIX Swiss Exchange | `.SW` |
+| Prefix    | Exchange                       | Yahoo suffix |
+|-----------|--------------------------------|--------------|
+| `FRA:`    | Frankfurt                      | `.F`         |
+| `ETR:`    | XETRA                          | `.DE`        |
+| `NASDAQ:` | NASDAQ                         | *(none)*     |
+| `NYSE:`   | New York Stock Exchange        | *(none)*     |
+| `LSE:`    | London Stock Exchange          | `.L`         |
+| `CVE:`    | TSX Venture (Canada)           | `.V`         |
+| `TSX:`    | Toronto Stock Exchange         | `.TO`        |
+| `EPA:`    | Euronext Paris                 | `.PA`        |
+| `AMS:`    | Euronext Amsterdam             | `.AS`        |
+| `BIT:`    | Borsa Italiana (Milan)         | `.MI`        |
+| `BME:`    | Bolsa de Madrid                | `.MC`        |
+| `ASX:`    | Australian Securities Exchange | `.AX`        |
+| `HKG:`    | Hong Kong Stock Exchange       | `.HK`        |
+| `TYO:`    | Tokyo Stock Exchange           | `.T`         |
+| `SWX:`    | SIX Swiss Exchange             | `.SW`        |
 
 Plain Yahoo Finance symbols (e.g. `AAPL`, `MSFT`) are also accepted without a prefix.
 
@@ -95,10 +95,10 @@ AUTH_PASSWORD_HASHES=<hash_for_mladen>,<hash_for_friend>
 docker-compose up --build -d
 ```
 
-| Service | URL |
-|---------|-----|
-| Streamlit UI | http://localhost:8501 |
-| FastAPI | http://localhost:8000 |
+| Service            | URL                        |
+|--------------------|----------------------------|
+| Streamlit UI       | http://localhost:8501      |
+| FastAPI            | http://localhost:8000      |
 | API docs (Swagger) | http://localhost:8000/docs |
 
 Portfolio data is stored in a named Docker volume (`finance_portfolios`) and survives container restarts.
@@ -227,14 +227,14 @@ Switch to the **Analysis** tab and click **▶ Run Analysis**. Results are cache
 
 **Trend signals explained:**
 
-| Signal | Meaning |
-|--------|---------|
+| Signal     | Meaning                                                |
+|------------|--------------------------------------------------------|
 | STRONG BUY | Price > SMA50 > SMA200, RSI 30–70, P/E below threshold |
-| BULLISH | Price > SMA200, RSI 30–70, P/E below threshold |
-| OVERBOUGHT | Price > SMA200 but RSI > 70 |
-| HOLD | In uptrend but P/E too high, or neutral conditions |
-| OVERSOLD | Price < SMA200 and RSI < 30 |
-| BEARISH | Price < SMA200 |
+| BULLISH    | Price > SMA200, RSI 30–70, P/E below threshold         |
+| OVERBOUGHT | Price > SMA200 but RSI > 70                            |
+| HOLD       | In uptrend but P/E too high, or neutral conditions     |
+| OVERSOLD   | Price < SMA200 and RSI < 30                            |
+| BEARISH    | Price < SMA200                                         |
 
 **Valuation labels** are based on P/E ratio (configurable thresholds) refined by PEG ratio when earnings growth data is available.
 
