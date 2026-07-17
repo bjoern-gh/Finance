@@ -100,7 +100,7 @@ def render_login():
         username = st.text_input("Username", key="login_username")
         password = st.text_input("Password", type="password", key="login_password")
 
-        if st.button("Sign in", type="primary", use_container_width=True):
+        if st.button("Sign in", type="primary", width="stretch"):
             if check_password(username, password):
                 st.session_state.authenticated = True
                 st.session_state.auth_user = username
@@ -423,7 +423,7 @@ def get_current_tickers() -> list[dict]:
 def render_sidebar():
     # User info + logout
     st.sidebar.caption(f"Signed in as **{st.session_state.auth_user}**")
-    if st.sidebar.button("Sign out", use_container_width=True):
+    if st.sidebar.button("Sign out", width="stretch"):
         st.session_state.authenticated = False
         st.session_state.auth_user = ""
         st.rerun()
@@ -458,12 +458,12 @@ def render_sidebar():
     st.sidebar.divider()
 
     col1, col2 = st.sidebar.columns(2)
-    if col1.button("＋ New", use_container_width=True):
+    if col1.button("＋ New", width="stretch"):
         st.session_state.creating_portfolio = True
         st.session_state.renaming_portfolio = False
 
     if st.session_state.current_portfolio and col2.button(
-        "✎ Rename", use_container_width=True
+        "✎ Rename", width="stretch"
     ):
         st.session_state.renaming_portfolio = True
         st.session_state.creating_portfolio = False
@@ -497,8 +497,8 @@ def render_sidebar():
         st.sidebar.divider()
         if st.sidebar.button(
             f"🗑️ Delete '{st.session_state.current_portfolio}'",
-            use_container_width=True,
             type="secondary",
+            width="stretch",
         ):
             pm.delete_portfolio(st.session_state.current_portfolio)
             remaining = pm.list_portfolios()
@@ -584,7 +584,7 @@ def render_build_tab():
         if resolved:
             preview_df = pd.DataFrame(resolved)[["display_name", "yahoo", "original"]]
             preview_df.columns = ["Company Name", "Yahoo Symbol", "Original"]
-            st.dataframe(preview_df, use_container_width=True, hide_index=True)
+            st.dataframe(preview_df, width="stretch", hide_index=True)
 
             if st.button("✅ Add all to portfolio", type="primary"):
                 added = 0
@@ -642,7 +642,7 @@ def render_build_tab():
             data=export_bytes,
             file_name=f"{portfolio_name}.json",
             mime="application/json",
-            use_container_width=True,
+            width="stretch",
         )
 
     with imp_col:
@@ -689,7 +689,7 @@ def render_build_tab():
                 )
 
             ci1, ci2 = st.columns(2)
-            if ci1.button("✅ Save", type="primary", use_container_width=True):
+            if ci1.button("✅ Save", type="primary", width="stretch"):
                 if import_name.strip():
                     pm.save_portfolio(import_name.strip(), raw["tickers"])
                     st.session_state.current_portfolio = import_name.strip()
@@ -697,7 +697,7 @@ def render_build_tab():
                     st.session_state.analysis_results = None
                     st.success(f"Portfolio '{import_name.strip()}' imported.")
                     st.rerun()
-            if ci2.button("Cancel", use_container_width=True):
+            if ci2.button("Cancel", width="stretch"):
                 st.session_state.portfolio_import_preview = None
                 st.rerun()
 
@@ -719,7 +719,7 @@ def render_analysis_tab():
     ticker_tuples = tuple((t["original"], t["yahoo"]) for t in tickers)
 
     col1, col2 = st.columns([2, 5])
-    run = col1.button("▶️ Run Analysis", type="primary", use_container_width=True)
+    run = col1.button("▶️ Run Analysis", type="primary", width="stretch")
     col2.caption(f"Analyzing {len(tickers)} stocks · Results cached for 5 min")
 
     if run:
@@ -769,7 +769,7 @@ def render_analysis_tab():
         existing_cols = [c for c in display_cols if c in success_df.columns]
 
         styled = style_dataframe(success_df[existing_cols])
-        st.dataframe(styled, use_container_width=True, hide_index=True)
+        st.dataframe(styled, width="stretch", hide_index=True)
 
         # ── Download buttons ──
         dl1, dl2, _ = st.columns([1, 1, 4])
@@ -779,7 +779,7 @@ def render_analysis_tab():
             data=csv_data,
             file_name=f"{portfolio_name}_analysis.csv",
             mime="text/csv",
-            use_container_width=True,
+            width="stretch",
         )
 
         buffer = io.BytesIO()
@@ -792,14 +792,14 @@ def render_analysis_tab():
             data=buffer.getvalue(),
             file_name=f"{portfolio_name}_analysis.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            use_container_width=True,
+            width="stretch",
         )
 
     if not failed_df.empty:
         with st.expander(f"⚠️ {len(failed_df)} tickers with errors"):
             st.dataframe(
                 failed_df[["Original Ticker", "Yahoo Symbol", "Company", "Status"]],
-                use_container_width=True,
+                width="stretch",
                 hide_index=True,
             )
 
@@ -847,7 +847,7 @@ def render_charts_tab():
         fig = build_price_chart(yahoo_symbol, company_name, period)
 
     if fig:
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
     else:
         st.error(f"Could not load chart data for {yahoo_symbol}.")
 

@@ -142,8 +142,27 @@ docker-compose restart
 ### Prerequisites
 
 - Python 3.11+
+- [uv](https://docs.astral.sh/uv/) (recommended for 10x-100x faster package installation) or standard Python `pip`
 
 ### Setup
+
+#### Option A: Using `uv` (Recommended)
+
+```bash
+git clone <repository_url>
+cd Finance
+
+# Create the virtualenv
+uv venv --python 3.14
+
+# Activate the venv
+source .venv/bin/activate      # Windows: .venv\Scripts\activate
+
+# Install all dependencies instantly
+uv pip install -r requirements.txt -r dev-requirements.txt
+```
+
+#### Option B: Using standard Python (`venv` / `pip`)
 
 ```bash
 git clone <repository_url>

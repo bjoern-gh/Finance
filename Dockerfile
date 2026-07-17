@@ -17,10 +17,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Install dependencies first — this layer is cached as long as requirements.txt doesn't change
+# Install dependencies using uv — this layer is cached as long as requirements.txt doesn't change
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 COPY requirements.txt .
-RUN pip install --upgrade pip && \
-    pip install -r requirements.txt
+RUN uv pip install --system -r requirements.txt
 
 # Copy application code
 COPY . .
