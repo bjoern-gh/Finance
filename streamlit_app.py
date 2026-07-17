@@ -767,19 +767,28 @@ def render_analysis_tab():
         display_cols += [c for c in optional_cols if c in success_df.columns]
         existing_cols = [c for c in display_cols if c in success_df.columns]
 
-        # Filter recommended buys: Valuation contains "Cheap" (case-insensitive) and Trend is "STRONG BUY"
+        # Filter recommended buys: Valuation contains "Cheap" (case-insensitive) independent of trend
         is_cheap = (
             success_df["Valuation"]
             .astype(str)
             .str.contains("Cheap", case=False, na=False)
         )
-        is_strong_buy = success_df["Trend"].astype(str) == "STRONG BUY"
-        recommended_df = success_df[is_cheap & is_strong_buy]
+        recommended_df = success_df[is_cheap].copy()
 
         if not recommended_df.empty:
+            # Sort by KGV if available, else by Market Cap if available
+            if "P/E (KGV)" in recommended_df.columns:
+                recommended_df = recommended_df.sort_values(
+                    by="P/E (KGV)", ascending=True
+                )
+            elif "Market Cap" in recommended_df.columns:
+                recommended_df = recommended_df.sort_values(
+                    by="Market Cap", ascending=True
+                )
+
             st.markdown("### 🔥 Buying Opportunities")
             st.caption(
-                "Stocks in your portfolio with a **STRONG BUY** trend and a **Cheap** or **Very Cheap** valuation."
+                "Stocks in your portfolio with a **Cheap** or **Very Cheap** valuation."
             )
             rec_styled = style_dataframe(recommended_df[existing_cols])
             st.dataframe(rec_styled, width="stretch", hide_index=True)
