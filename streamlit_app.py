@@ -778,9 +778,13 @@ def render_analysis_tab():
         if not recommended_df.empty:
             # Sort by KGV if available, else by Market Cap if available
             if "P/E (KGV)" in recommended_df.columns:
-                recommended_df = recommended_df.sort_values(
-                    by="P/E (KGV)", ascending=True
+                # Sort by positive KGV first, then by P/E value ascending
+                recommended_df["kvg_group"] = recommended_df["P/E (KGV)"].apply(
+                    lambda x: 1 if x <= 0 else 0
                 )
+                recommended_df = recommended_df.sort_values(
+                    by=["kvg_group", "P/E (KGV)"], ascending=[True, True]
+                ).drop(columns=["kvg_group"])
             elif "Market Cap" in recommended_df.columns:
                 recommended_df = recommended_df.sort_values(
                     by="Market Cap", ascending=True
