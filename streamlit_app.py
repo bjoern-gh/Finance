@@ -222,6 +222,14 @@ def style_dataframe(df: pd.DataFrame):
             pass
         return ""
 
+    def color_business_model(val):
+        v = str(val)
+        if v == "Royalty & Streaming":
+            return "background-color: #f3e5f5; color: #6a1b9a; font-weight: bold;"
+        elif v == "Operating Miner":
+            return "background-color: #fff3e0; color: #e65100; font-weight: bold;"
+        return ""
+
     styler = df.style
     if "Trend" in df.columns:
         styler = styler.map(color_trend, subset=["Trend"])
@@ -233,6 +241,8 @@ def style_dataframe(df: pd.DataFrame):
         styler = styler.map(color_52w_high, subset=["52W High (%)"])
     if "52W Low (%)" in df.columns:
         styler = styler.map(color_52w_low, subset=["52W Low (%)"])
+    if "Business Model" in df.columns:
+        styler = styler.map(color_business_model, subset=["Business Model"])
     return styler
 
 
@@ -745,6 +755,7 @@ def render_analysis_tab():
         display_cols = [
             "Company",
             "Yahoo Symbol",
+            "Business Model",
             "Price",
             "Currency",
             "Price (EUR)",
@@ -767,20 +778,64 @@ def render_analysis_tab():
         display_cols += [c for c in optional_cols if c in success_df.columns]
         existing_cols = [c for c in display_cols if c in success_df.columns]
 
+        # ── Interactive Filter Controls ──
+        view_df = success_df.copy()
+        if "Business Model" in success_df.columns or "Sector" in success_df.columns:
+            with st.expander(
+                "🔍 Filter Options (Business Model & Sector)", expanded=False
+            ):
+                f1, f2 = st.columns(2)
+
+                if "Business Model" in success_df.columns:
+                    avail_models = sorted(
+                        [
+                            m
+                            for m in success_df["Business Model"].unique()
+                            if m and m != "N/A"
+                        ]
+                    )
+                    if avail_models:
+                        selected_models = f1.multiselect(
+                            "Filter Business Model:",
+                            options=avail_models,
+                            default=avail_models,
+                            help="Filter between Royalty & Streaming, Operating Miner, and Operating Company",
+                        )
+                        if selected_models:
+                            view_df = view_df[
+                                view_df["Business Model"].isin(selected_models)
+                                | (view_df["Business Model"] == "N/A")
+                            ]
+
+                if "Sector" in success_df.columns:
+                    avail_sectors = sorted(
+                        [s for s in success_df["Sector"].unique() if s and s != "N/A"]
+                    )
+                    if avail_sectors:
+                        selected_sectors = f2.multiselect(
+                            "Filter Sector:",
+                            options=avail_sectors,
+                            default=avail_sectors,
+                            help="Filter by company sector",
+                        )
+                        if selected_sectors:
+                            view_df = view_df[
+                                view_df["Sector"].isin(selected_sectors)
+                                | (view_df["Sector"] == "N/A")
+                            ]
+
         # Filter recommended buys: Valuation contains "Cheap" (case-insensitive) independent of trend
         is_cheap = (
-            success_df["Valuation"]
-            .astype(str)
-            .str.contains("Cheap", case=False, na=False)
+            view_df["Valuation"].astype(str).str.contains("Cheap", case=False, na=False)
         )
-        recommended_df = success_df[is_cheap].copy()
+        recommended_df = view_df[is_cheap].copy()
 
         if not recommended_df.empty:
             # Sort by KGV if available, else by Market Cap if available
             if "P/E (KGV)" in recommended_df.columns:
                 # Sort by positive KGV first, then by P/E value ascending
                 recommended_df["kvg_group"] = recommended_df["P/E (KGV)"].apply(
-                    lambda x: 1 if x <= 0 else 0
+                    lambda x: 1 if pd.notna(x) and x <= 0 else 0
                 )
                 recommended_df = recommended_df.sort_values(
                     by=["kvg_group", "P/E (KGV)"], ascending=[True, True]
@@ -799,7 +854,7 @@ def render_analysis_tab():
             st.markdown("<br>", unsafe_allow_html=True)
 
         st.markdown("### 📋 Full Portfolio Analysis")
-        styled = style_dataframe(success_df[existing_cols])
+        styled = style_dataframe(view_df[existing_cols])
         st.dataframe(styled, width="stretch", hide_index=True)
 
         # ── Download buttons ──

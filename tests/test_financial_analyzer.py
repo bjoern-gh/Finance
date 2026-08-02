@@ -17,6 +17,7 @@ from financial_analyzer import (
     _determine_valuation_status,
     _get_optional_metrics,
     _determine_trend_status,
+    determine_business_model,
 )
 
 
@@ -216,9 +217,10 @@ def test_get_optional_metrics(
     expected_mkt_cap,
 ):
     # Mock the global config variables for these tests
-    with patch(
-        "financial_analyzer.INCLUDE_DIVIDEND_YIELD", include_dividend_yield
-    ), patch("financial_analyzer.INCLUDE_MARKET_CAP", include_market_cap):
+    with (
+        patch("financial_analyzer.INCLUDE_DIVIDEND_YIELD", include_dividend_yield),
+        patch("financial_analyzer.INCLUDE_MARKET_CAP", include_market_cap),
+    ):
         result = _get_optional_metrics(info)
         div_yield = result.get("Dividend Yield (%)")
         mkt_cap = result.get("Market Cap")
@@ -762,3 +764,48 @@ def test_determine_valuation_status_helper(
         pe_value, info, pe_cheap_threshold, pe_expensive_threshold, peg_max_threshold
     )
     assert valuation == expected_valuation
+
+
+@pytest.mark.parametrize(
+    "orig_ticker, yahoo_symbol, info, expected_model",
+    [
+        ("NYSE:FNV", "FNV", {}, "Royalty & Streaming"),
+        ("TSX:WPM", "WPM.TO", {}, "Royalty & Streaming"),
+        ("VOXR", "VOXR", {}, "Royalty & Streaming"),
+        ("TFPM", "TFPM.TO", {}, "Royalty & Streaming"),
+        ("RGLD", "RGLD", {}, "Royalty & Streaming"),
+        ("FRA:RYL", "RYL.F", {}, "Royalty & Streaming"),
+        ("Royal Gold", "RGLD", {}, "Royalty & Streaming"),
+        (
+            "UNKNOWN",
+            "UNKNOWN",
+            {"longName": "Royal Gold, Inc.", "sector": "Basic Materials"},
+            "Royalty & Streaming",
+        ),
+        (
+            "UNKNOWN",
+            "UNKNOWN",
+            {
+                "longBusinessSummary": "Holds net smelter return royalties on gold projects.",
+                "sector": "Basic Materials",
+            },
+            "Royalty & Streaming",
+        ),
+        (
+            "UNKNOWN",
+            "UNKNOWN",
+            {"industry": "Gold", "sector": "Basic Materials"},
+            "Operating Miner",
+        ),
+        (
+            "NASDAQ:AAPL",
+            "AAPL",
+            {"industry": "Consumer Electronics", "sector": "Technology"},
+            "Operating Company",
+        ),
+        ("", "", {}, "N/A"),
+    ],
+)
+def test_determine_business_model(orig_ticker, yahoo_symbol, info, expected_model):
+    model = determine_business_model(orig_ticker, yahoo_symbol, info)
+    assert model == expected_model

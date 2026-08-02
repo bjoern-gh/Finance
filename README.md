@@ -9,7 +9,8 @@ A stock analysis application that fetches live data from Yahoo Finance, calculat
 - **Portfolio management** — create multiple named watchlists, add/remove stocks, data persists across restarts
 - **Company search** — type a company name or ticker in the search box to find and add stocks; no need to know the exact symbol
 - **File import** — upload a `.txt` or `.csv` with company names, plain tickers, or prefixed tickers; the app resolves them automatically
-- **Metrics per stock** — Price, Currency, Price (EUR), SMA200, SMA50, RSI, P/E, Trend signal, Valuation, ATH/ATL, 52W High/Low %, Debt/Equity, Revenue Growth, Profit Margin, Beta, Sector, Dividend Yield, Market Cap
+- **Metrics per stock** — Price, Currency, Price (EUR), SMA200, SMA50, RSI, P/E, Trend signal, Valuation, ATH/ATL, 52W High/Low %, Debt/Equity, Revenue Growth, Profit Margin, Beta, Sector, Business Model, Dividend Yield, Market Cap
+- **Business Model Categorization & Filtering** — Automatically distinguishes non-operating **Royalty & Streaming** companies (Franco-Nevada, Wheaton Precious Metals, Vox Royalties, Triple Flag, etc.) from **Operating Miners** and general operating companies, with interactive table filters.
 - **Trend signals** — STRONG BUY / BULLISH / OVERBOUGHT / HOLD / OVERSOLD / BEARISH, based on dual SMA + RSI + P/E
 - **EUR conversion** — prices in non-EUR currencies (USD, GBp, CAD, etc.) are auto-converted using live FX rates
 - **Color-coded table** — trend, valuation, RSI, and 52W distance are highlighted for quick scanning

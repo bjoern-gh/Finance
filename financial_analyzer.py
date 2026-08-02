@@ -198,15 +198,120 @@ def _calculate_rsi(hist: pd.DataFrame, period: int = 14) -> float:
     return round(100 - (100 / (1 + rs)), 2)
 
 
-def _calculate_pe_ratio(info: dict, curr_p: float) -> float:
-    """Calculate Price-to-Earnings ratio."""
+# ── Primary Symbol Fallback Registry ──────────────────────────────────────
+
+PRIMARY_SYMBOL_MAP = {
+    # Royal Gold
+    "FRA:RYL": "RGLD",
+    "RYL.F": "RGLD",
+    "RYL": "RGLD",
+    # Franco-Nevada
+    "FRA:R5A": "FNV",
+    "R5A.F": "FNV",
+    "R5A": "FNV",
+    # Wheaton Precious Metals
+    "FRA:WPM": "WPM",
+    "WPM.F": "WPM",
+    "WPM.L": "WPM",
+    # Triple Flag
+    "FRA:TFPM": "TFPM",
+    "TFPM.F": "TFPM",
+    # Sandstorm Gold
+    "TSX:SSL": "SAND",
+    "SSL.TO": "SAND",
+    # Vox Royalties
+    "CVE:VOX": "VOXR",
+    "VOX.V": "VOXR",
+    # Metalla
+    "TSX:MTA": "MTA",
+    "MTA.TO": "MTA",
+}
+
+
+def _enrich_stock_info(
+    original_ticker: str, yahoo_symbol: str, info: dict, ticker_obj: yf.Ticker = None
+) -> dict:
+    """
+    Enrich `info` dictionary with missing valuation/metric fields using:
+    1. Primary symbol mapping (e.g. RYL.F -> RGLD, R5A.F -> FNV, WPM.F -> WPM, TFPM.F -> TFPM)
+    2. Primary ticker resolution by stripping regional exchange suffixes (.F, .DE, .V, .L, etc.)
+    """
+    enriched = dict(info) if isinstance(info, dict) else {}
+
+    primary_symbol = PRIMARY_SYMBOL_MAP.get(original_ticker) or PRIMARY_SYMBOL_MAP.get(
+        yahoo_symbol
+    )
+
+    if not primary_symbol and "." in yahoo_symbol:
+        base = yahoo_symbol.split(".")[0]
+        if base in PRIMARY_SYMBOL_MAP:
+            primary_symbol = PRIMARY_SYMBOL_MAP[base]
+        elif len(base) >= 3 and not base.isdigit():
+            primary_symbol = base
+
+    if primary_symbol and primary_symbol != yahoo_symbol:
+        try:
+            p_obj = yf.Ticker(primary_symbol)
+            p_info = p_obj.info
+            if p_info:
+                for key, val in p_info.items():
+                    if val is not None and (
+                        enriched.get(key) is None or enriched.get(key) == "N/A"
+                    ):
+                        enriched[key] = val
+        except Exception as e:
+            logging.debug(
+                f"Primary symbol fallback fetch failed for {primary_symbol}: {e}"
+            )
+
+    return enriched
+
+
+def _calculate_pe_ratio(
+    info: dict, curr_p: float, ticker_obj: yf.Ticker = None
+) -> float:
+    """Calculate Price-to-Earnings ratio with multiple fallbacks."""
     if pd.isna(curr_p):
         return pd.NA
-    pe_v = info.get("trailingPE") or info.get("forwardPE")
-    if pe_v is None or pe_v == "None":
-        eps = info.get("trailingEps")
-        pe_v = curr_p / eps if (eps and eps != 0) else pd.NA
-    return pe_v
+
+    # 1. Trailing P/E
+    pe_v = info.get("trailingPE")
+    if (
+        pe_v is not None
+        and pe_v != "None"
+        and isinstance(pe_v, (int, float))
+        and pe_v > 0
+    ):
+        return pe_v
+
+    # 2. Forward P/E
+    pe_v = info.get("forwardPE")
+    if (
+        pe_v is not None
+        and pe_v != "None"
+        and isinstance(pe_v, (int, float))
+        and pe_v > 0
+    ):
+        return pe_v
+
+    # 3. Trailing or Forward EPS
+    eps = info.get("trailingEps") or info.get("forwardEps")
+    if eps and isinstance(eps, (int, float)) and eps > 0:
+        return curr_p / eps
+
+    # 4. Quarterly financial statement TTM calculation
+    if ticker_obj is not None:
+        try:
+            q_inc = ticker_obj.quarterly_financials
+            if not q_inc.empty and "Net Income" in q_inc.index:
+                ttm_net = q_inc.loc["Net Income"].head(4).sum()
+                mkt_cap = info.get("marketCap")
+                if mkt_cap and isinstance(mkt_cap, (int, float)) and ttm_net > 0:
+                    return mkt_cap / ttm_net
+        except Exception:
+            pass
+
+    return pd.NA
 
 
 def _determine_ath_atl_status(
@@ -227,33 +332,53 @@ def _determine_ath_atl_status(
 def _determine_valuation_status(
     pe_v, info: dict, pe_cheap: float, pe_expensive: float, peg_max: float
 ) -> str:
-    """Determine valuation label based on P/E and PEG ratios."""
-    if not isinstance(pe_v, (int, float)) or pd.isna(pe_v):
-        return "N/A"
-
-    if pe_v <= pe_cheap:
-        status = "Cheap"
-    elif pe_v >= pe_expensive:
-        status = "Expensive"
-    else:
-        status = "Fair"
-
-    earnings_growth = info.get("earningsGrowth")
-    if earnings_growth and earnings_growth > 0:
-        peg_v = pe_v / (earnings_growth * 100)
-        if peg_v <= peg_max:
-            if status == "Cheap":
-                status = "Very Cheap (PEG)"
-            elif status == "Fair":
-                status = "Fair (Good PEG)"
+    """Determine valuation label based on P/E, PEG ratios, or fallback P/S / P/B ratios."""
+    if isinstance(pe_v, (int, float)) and not pd.isna(pe_v) and pe_v > 0:
+        if pe_v <= pe_cheap:
+            status = "Cheap"
+        elif pe_v >= pe_expensive:
+            status = "Expensive"
         else:
-            if status == "Cheap":
-                status = "Cheap (High PEG)"
-            elif status == "Fair":
-                status = "Fair (High PEG)"
-            elif status == "Expensive":
-                status = "Very Expensive (PEG)"
-    return status
+            status = "Fair"
+
+        earnings_growth = info.get("earningsGrowth")
+        if earnings_growth and earnings_growth > 0:
+            peg_v = pe_v / (earnings_growth * 100)
+            if peg_v <= peg_max:
+                if status == "Cheap":
+                    status = "Very Cheap (PEG)"
+                elif status == "Fair":
+                    status = "Fair (Good PEG)"
+            else:
+                if status == "Cheap":
+                    status = "Cheap (High PEG)"
+                elif status == "Fair":
+                    status = "Fair (High PEG)"
+                elif status == "Expensive":
+                    status = "Very Expensive (PEG)"
+        return status
+
+    # Fallback Tier 1: Price-to-Sales (P/S) ratio when P/E is uncomputed/missing
+    ps_v = info.get("priceToSalesTrailing12Months")
+    if ps_v is not None and isinstance(ps_v, (int, float)) and ps_v > 0:
+        if ps_v <= 3.0:
+            return "Cheap (P/S)"
+        elif ps_v <= 8.0:
+            return "Fair (P/S)"
+        else:
+            return "Expensive (P/S)"
+
+    # Fallback Tier 2: Price-to-Book (P/B) ratio
+    pb_v = info.get("priceToBook")
+    if pb_v is not None and isinstance(pb_v, (int, float)) and pb_v > 0:
+        if pb_v <= 1.5:
+            return "Cheap (P/B)"
+        elif pb_v <= 4.0:
+            return "Fair (P/B)"
+        else:
+            return "Expensive (P/B)"
+
+    return "N/A"
 
 
 def _determine_trend_status(curr_p, sma200, sma50, rsi, pe_v, kgv_max: int) -> str:
@@ -287,10 +412,209 @@ def _determine_trend_status(curr_p, sma200, sma50, rsi, pe_v, kgv_max: int) -> s
     return "HOLD"
 
 
+# ── Known Royalty & Streaming Tickers & Keywords ──────────────────────────
+
+ROYALTY_STREAMING_REGISTRY = {
+    # Franco-Nevada
+    "FNV",
+    "FNV.TO",
+    "NYSE:FNV",
+    "TSX:FNV",
+    "FRA:R5A",
+    "R5A.F",
+    # Wheaton Precious Metals
+    "WPM",
+    "WPM.TO",
+    "NYSE:WPM",
+    "TSX:WPM",
+    "LSE:WPM",
+    "WPM.L",
+    "FRA:WPM",
+    # Royal Gold
+    "RGLD",
+    "NASDAQ:RGLD",
+    "FRA:RYL",
+    "RYL.F",
+    "RYL",
+    # Triple Flag Precious Metals
+    "TFPM",
+    "TFPM.TO",
+    "NYSE:TFPM",
+    "TSX:TFPM",
+    # Osisko Gold Royalties
+    "OR",
+    "OR.TO",
+    "NYSE:OR",
+    "TSX:OR",
+    # Sandstorm Gold Royalties
+    "SAND",
+    "SSL.TO",
+    "NYSE:SAND",
+    "TSX:SSL",
+    # Vox Royalties
+    "VOXR",
+    "VOXR.TO",
+    "NASDAQ:VOXR",
+    "TSX:VOXR",
+    "VOX.V",
+    "CVE:VOX",
+    "VOX",
+    # Metalla Royalty & Streaming
+    "MTA",
+    "MTA.TO",
+    "NYSE:MTA",
+    "TSX:MTA",
+    # Altius Minerals
+    "ALS.TO",
+    "TSX:ALS",
+    "ALS",
+    # Freehold Royalties
+    "FRU.TO",
+    "TSX:FRU",
+    "FRU",
+    # Lithium Royalty Corp
+    "LRC.TO",
+    "TSX:LRC",
+    "LRC",
+    # Ecora Resources (Anglo Pacific Group)
+    "ECOR.L",
+    "LSE:ECOR",
+    "ECOR",
+    # EMX Royalty
+    "EMX",
+    "EMX.TO",
+    "NYSE:EMX",
+    "TSX:EMX",
+    # Elemental Altus Royalties
+    "ELE.V",
+    "CVE:ELE",
+    "ELE",
+    # Star Royalties
+    "STRR.V",
+    "CVE:STRR",
+    # Orogen Royalties
+    "OGN.V",
+    "CVE:OGN",
+}
+
+ROYALTY_COMPANY_NAMES = [
+    "royal gold",
+    "franco-nevada",
+    "franco nevada",
+    "wheaton precious",
+    "triple flag",
+    "vox royalties",
+    "vox royalty",
+    "osisko gold royalties",
+    "osisko gold",
+    "sandstorm gold",
+    "metalla royalty",
+    "altius minerals",
+    "freehold royalties",
+    "lithium royalty",
+    "ecora resources",
+    "deterra royalties",
+    "emx royalty",
+    "elemental altus",
+    "star royalties",
+    "orogen royalties",
+]
+
+ROYALTY_KEYWORDS = [
+    "royalty",
+    "royalties",
+    "streaming company",
+    "streaming agreements",
+    "stream agreement",
+    "net smelter return",
+    "nsr",
+    "gross revenue royalty",
+    "precious metals stream",
+    "purchase agreements to acquire",
+    "free cash flow streaming",
+]
+
+
+def determine_business_model(
+    original_ticker: str = "", yahoo_symbol: str = "", info: dict = None
+) -> str:
+    """
+    Determine the business model:
+    - 'Royalty & Streaming': Non-operating resource capital providers receiving streams/NSR.
+    - 'Operating Miner': Mining operators in Basic Materials / Energy.
+    - 'Operating Company': General non-resource operating firms.
+    - 'N/A': Missing metadata or empty input.
+    """
+    if info is None:
+        info = {}
+
+    orig_clean = (original_ticker or "").upper().strip()
+    yahoo_clean = (yahoo_symbol or "").upper().strip()
+    base_symbol = yahoo_clean.split(".")[0] if yahoo_clean else ""
+
+    orig_lower = (original_ticker or "").lower().strip()
+    company_name = (
+        (info.get("longName") or info.get("shortName") or "").lower()
+        if isinstance(info, dict)
+        else ""
+    )
+
+    # 1. Check curated ticker registry
+    if (
+        orig_clean in ROYALTY_STREAMING_REGISTRY
+        or yahoo_clean in ROYALTY_STREAMING_REGISTRY
+        or (base_symbol and base_symbol in ROYALTY_STREAMING_REGISTRY)
+    ):
+        return "Royalty & Streaming"
+
+    # 2. Check known company names and phrases
+    if any(name in orig_lower for name in ROYALTY_COMPANY_NAMES) or any(
+        name in company_name for name in ROYALTY_COMPANY_NAMES
+    ):
+        return "Royalty & Streaming"
+
+    # 3. NLP check on company summary, industry, and name
+    summary = (
+        (info.get("longBusinessSummary") or "").lower()
+        if isinstance(info, dict)
+        else ""
+    )
+    industry = (info.get("industry") or "").lower() if isinstance(info, dict) else ""
+    sector = (info.get("sector") or "").lower() if isinstance(info, dict) else ""
+
+    if (
+        any(kw in summary for kw in ROYALTY_KEYWORDS)
+        or "royalty" in industry
+        or "streaming" in industry
+        or "royalty" in company_name
+        or "royalties" in company_name
+    ):
+        return "Royalty & Streaming"
+
+    # 3. Basic Materials / Metals & Mining heuristic vs general operating company
+    if (
+        sector in ["basic materials", "energy"]
+        or "mining" in industry
+        or "precious metals" in industry
+        or "gold" in industry
+        or "silver" in industry
+    ):
+        return "Operating Miner"
+
+    if sector or industry or company_name:
+        return "Operating Company"
+
+    return "N/A"
+
+
 def _get_optional_metrics(
-    info: dict, include_dividend: bool = None, include_market_cap: bool = None
+    info: dict,
+    include_dividend: bool = None,
+    include_market_cap: bool = None,
+    original_ticker: str = "",
+    yahoo_symbol: str = "",
 ) -> dict:
-    """Fetch optional metrics: dividend yield, market cap, D/E, growth, margin, beta, sector."""
+    """Fetch optional metrics: dividend yield, market cap, D/E, growth, margin, beta, sector, business model."""
     result = {}
 
     # Use provided flags if given, otherwise fall back to module-level defaults
@@ -325,6 +649,11 @@ def _get_optional_metrics(
 
     # Sector
     result["Sector"] = info.get("sector", "N/A") or "N/A"
+
+    # Business Model
+    result["Business Model"] = determine_business_model(
+        original_ticker, yahoo_symbol, info
+    )
 
     return result
 
@@ -377,6 +706,7 @@ def get_financial_metrics(ticker_tuple: tuple[str, str]) -> dict:
         "Profit Margin (%)": pd.NA,
         "Beta": pd.NA,
         "Sector": "N/A",
+        "Business Model": "N/A",
     }
     if INCLUDE_DIVIDEND_YIELD:
         _empty["Dividend Yield (%)"] = pd.NA
