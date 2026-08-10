@@ -313,13 +313,18 @@ include_market_cap = True
 ```
 Finance/
 ├── streamlit_app.py       # Streamlit UI — portfolios, search, analysis, charts
-├── financial_analyzer.py  # Core logic — data fetch, metric calculation
+├── financial_analyzer.py  # Core logic — data fetch, metric calculation, categorization
 ├── portfolio_manager.py   # Portfolio CRUD — JSON files in portfolios/
 ├── api.py                 # FastAPI REST endpoint
 ├── main.py                # Console entry point
+├── agent.py               # AI Agent functionality (POC)
+├── tools.py               # Agent tools & financial analysis integrations
 ├── config.ini             # All configurable settings
+├── pyproject.toml         # Hatchling build & dev tooling configuration
+├── uv.lock                # Lockfile for reproducible uv environment
 ├── requirements.txt       # Python dependencies
 ├── dev-requirements.txt   # Dev/test dependencies
+├── Changelog.md           # Project version history and release notes
 ├── Dockerfile             # Single image for both services
 ├── docker-compose.yml     # Orchestrates Streamlit + API + volume
 ├── .dockerignore

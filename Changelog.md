@@ -1,46 +1,49 @@
-  ### Cause of the Segmentation Fault
+# Changelog
 
-  The crash is a known issue caused by a conflict between Python 3.14's new memory allocator and PyArrow (which is imported by pandas and used heavily under the hood by streamlit).
+All notable changes to this project will be documented in this file.
 
-  1. Python 3.14 + mimalloc: Starting with Python 3.13/3.14, Python integrates the mimalloc allocator for memory management.
-  2. PyArrow + mimalloc: PyArrow also packages its own custom mimalloc memory allocator. When the application runs, both Python and PyArrow try to initialize their own independent mimalloc
-  allocators, causing conflicts, memory corruption, and a segmentation fault during thread/interpreter initialization or teardown.
-  ──────
-  ### Solution implemented
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-  We resolved this by forcing PyArrow to bypass its bundled mimalloc allocator and use the standard system memory allocator (malloc/free) instead. This is done by setting the environment variable
-  ARROW_DEFAULT_MEMORY_POOL=system.
+## [1.3.0] - 2026-08-10
 
-  We applied this environment variable fix across all entry points in the project to make sure the app never crashes, regardless of how it is launched:
+### Added
+- **Business Model Categorization & Filtering**:
+  - Added automatic detection and classification for company business models (e.g., distinguishing non-operating **Royalty & Streaming** companies like Franco-Nevada, Wheaton Precious Metals, Vox Royalties, Triple Flag from **Operating Miners** and general operating companies).
+  - Added interactive filtering by Business Model in the Streamlit UI.
+  - Added comprehensive test suite coverage (89 tests) for metric calculations, valuation rules, and business model categorization.
+- **Agentic AI Integration (Proof of Concept)**:
+  - Introduced `agent.py` and `tools.py` providing LLM agent capabilities and tool definitions for financial analysis.
+  - Added custom Streamlit development skill (`.agents/skills/developing-with-streamlit`).
+- **Modern `uv` Development Environment**:
+  - Integrated `pyproject.toml` configuration using `hatchling` build backend and defined dev dependencies (`black`, `pytest`, `pytest-mock`, `ruff`).
+  - Added reproducible lockfile `uv.lock`.
 
-  1. At Code Level (Python):
-      • Added os.environ["ARROW_DEFAULT_MEMORY_POOL"] = "system" at the absolute top (before any other module imports) in:
-	  • streamlit_app.py
-	  • financial_analyzer.py
-	  • conftest.py
+### Changed
+- Refined valuation and sorting rules for financial indicators (positive lowest P/E / KGV ranked first, extended buying opportunities logic).
+- Updated documentation and project structure representation in `README.md`.
 
-  2. At Environment Level (Virtual Environment):
-      • Updated activate to export ARROW_DEFAULT_MEMORY_POOL=system upon activation and clean it up (unset/restore) upon deactivation.
+---
 
- ### 🔍 Root Cause of the Warning Log
+## [1.2.0] - 2026-07-23
 
-  The log warning:
+### Added
+- Standardized `uv` virtual environment setup and project tooling configuration (`pyproject.toml`).
+- Extended valuation classification logic (Cheap and Very Cheap buying opportunities).
 
-    2026-07-17 13:16:46,553 - WARNING - Sort column 'KGV' not found.
+### Changed
+- Adjusted sorting algorithm to rank positive lowest KGV first.
 
-  was happening because:
+---
 
-  1. In config.ini, the default setting is sort_by_column = KGV.
-  2. However, the application uses English keys internally and the corresponding column name returned in the results is "P/E (KGV)".
-  3. Because the string "KGV" did not exactly match "P/E (KGV)", the sorting logic skipped it and threw a warning.
+## [1.1.0] - 2026-07-17
 
-  Additionally, the original sorting implementation had a bug where it would permanently overwrite text-based columns (like Company or Sector) with NaN if a user attempted to sort by them (due to
-  calling pd.to_numeric(..., errors="coerce") directly on the column).
-  ──────
-  ### 🛠️ Improvements Made
+### Fixed
+- **Segmentation Fault Fix (Python 3.14 + PyArrow Conflict)**:
+  - Resolved mimalloc memory allocator conflict between Python 3.14 and PyArrow by setting `ARROW_DEFAULT_MEMORY_POOL=system` across entry points (`streamlit_app.py`, `financial_analyzer.py`, `conftest.py`) and `.venv/bin/activate`.
+- **Sort Column Warning & Data Mutation Fix**:
+  - Resolved `WARNING - Sort column 'KGV' not found` by implementing alias mapping (mapping "KGV", "PE", "P/E" to `"P/E (KGV)"`).
+  - Fixed non-destructive sorting logic so sorting by text columns (e.g. Company, Sector) no longer converts strings to `NaN`.
 
-  I updated the sorting logic in financial_analyzer.py to make it alias-aware and non-destructive:
-
-  1. Alias Mapping: It now maps common input aliases (e.g., "KGV", "PE", "P/E") to the correct DataFrame column name "P/E (KGV)".
-  2. Safe Sort Keys: It uses the Pandas key parameter in sort_values to temporarily convert only numeric columns (like Price, RSI, or P/E) to float during the sorting step.
-  3. No Mutations: Because it uses a temporary sorting key, if you sort by text columns (like Company), their original text values will no longer be wiped out or replaced by NaN.
+### Added
+- Added `Changelog.md` and contributing guidelines in `README.md`.
