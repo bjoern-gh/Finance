@@ -5,6 +5,36 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - 2026-09-30
+
+### Added
+- **Multi-threaded Batch Analysis**:
+  - Implemented parallel execution in `financial_analyzer.analyze_tickers` using `concurrent.futures.ThreadPoolExecutor` and `max_workers` from `config.ini`, delivering ~5-10x performance improvement for large portfolios.
+  - Added thread-safe synchronization for the in-memory FX rates cache (`_eur_rate_cache`) with `threading.Lock`.
+- **Backend Service Unification**:
+  - Moved `search_company` to `financial_analyzer.py` as a shared core service used by Streamlit, FastAPI, and Agent tools.
+  - Added `/search` REST endpoint in `api.py`.
+- **Tooling & Agent Capabilities**:
+  - Fixed broken `search_company` import in `tools.py`.
+  - Implemented `get_portfolio_info` and `run_bulk_analysis` tool functions.
+  - Registered all tool definitions in `agent.py` and improved error handling during tool execution.
+- **Robust Storage**:
+  - Added atomic file write operations in `portfolio_manager.py` using temporary swap files.
+  - Implemented graceful error recovery for corrupted or empty JSON portfolio files.
+  - Added path traversal protection for portfolio names.
+- **Expanded Test Suite**:
+  - Increased unit test coverage from 89 to 115 tests.
+  - Added test suites for portfolio manager (`test_portfolio_manager.py`), batch analysis concurrency (`test_analyze_tickers.py`), agent and tools (`test_tools.py`, `test_agent.py`), and FastAPI routes (`test_api.py`).
+
+### Changed
+- **Streamlit Modernization**:
+  - Modernized UI layout with Material Symbols icons (`:material/...:`).
+  - Adopted bordered container grouping (`st.container(border=True)`) across search, import, portfolio list, and export views.
+  - Replaced period dropdown in charts with Streamlit's native `st.segmented_control`.
+  - Removed raw HTML line break hacks in favor of native Streamlit spacing.
+
+---
+
 ## [1.3.0] - 2026-08-10
 
 ### Added

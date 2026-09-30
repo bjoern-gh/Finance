@@ -7,6 +7,8 @@ from tools import (
     add_ticker_to_portfolio,
     remove_ticker_from_portfolio,
     get_market_search,
+    get_portfolio_info,
+    run_bulk_analysis,
 )
 
 # Configure logging
@@ -25,8 +27,6 @@ class OpenAIClient:
         self.client = openai.OpenAI(api_key=self.api_key, base_url=base_url)
 
     def generate_response(self, prompt: str, tools: List[Dict]) -> Dict[str, Any]:
-        # This is a simplified call. In a production ReAct loop,
-        # you'd handle the multi-turn conversation.
         response = self.client.chat.completions.create(
             model="gpt-4o",
             messages=[
@@ -41,7 +41,6 @@ class OpenAIClient:
             tool_choice="auto",
         )
         return response.choices[0].message
-        # Note: This requires the `openai` package to be installed.
 
 
 class FinancialAgent:
@@ -58,7 +57,20 @@ class FinancialAgent:
                     "description": "Returns a list of all available portfolio names.",
                     "parameters": {"type": "object", "properties": {}, "required": []},
                 },
-                "function_call": list_portfolios,  # Mapping the actual function
+                "function_call": list_portfolios,
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "get_portfolio_info",
+                    "description": "Returns the list of stocks currently in a portfolio.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {"portfolio_name": {"type": "string"}},
+                        "required": ["portfolio_name"],
+                    },
+                },
+                "function_call": get_portfolio_info,
             },
             {
                 "type": "function",
@@ -131,29 +143,54 @@ class FinancialAgent:
                 },
                 "function_call": get_market_search,
             },
+            {
+                "type": "function",
+                "function": {
+                    "name": "run_bulk_analysis",
+                    "description": "Runs a full analysis on all tickers in a portfolio.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {"portfolio_name": {"type": "string"}},
+                        "required": ["portfolio_name"],
+                    },
+                },
+                "function_call": run_bulk_analysis,
+            },
         ]
 
     def run(self, user_input: str, current_portfolio: str = None) -> str:
         if not self.model_client:
             return "Error: No model client provided. Please configure an API key in the settings."
 
-        # Simplified ReAct loop
-        response = self.model_client.generate_response(user_input, self.tools)
+        # Prepare tools definition for OpenAI function calling
+        tools_def = [
+            {"type": t["type"], "function": t["function"]} for t in self.tools
+        ]
+        response = self.model_client.generate_response(user_input, tools_def)
 
-        if response.tool_calls:
+        if hasattr(response, "tool_calls") and response.tool_calls:
+            results = []
             for tool_call in response.tool_calls:
                 fn_name = tool_call.function.name
                 fn_args = json.loads(tool_call.function.arguments)
 
-                # Find the function
+                # Find the matching tool definition
                 tool_def = next(
-                    t for t in self.tools if t["function"]["name"] == fn_name
+                    (t for t in self.tools if t["function"]["name"] == fn_name),
+                    None,
                 )
+                if not tool_def:
+                    results.append(f"Tool {fn_name} not found.")
+                    continue
+
                 fn = tool_def["function_call"]
-
-                # Execute
                 logger.info(f"Calling tool: {fn_name} with {fn_args}")
-                result = fn(**fn_args)
-                return f"Tool result ({fn_name}): {result}"
+                try:
+                    result = fn(**fn_args)
+                    results.append(str(result))
+                except Exception as e:
+                    results.append(f"Error calling {fn_name}: {e}")
 
-        return response.content
+            return "\n\n".join(results)
+
+        return getattr(response, "content", str(response))

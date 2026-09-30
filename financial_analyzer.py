@@ -4,6 +4,9 @@ import re
 import configparser
 import time
 import logging
+import threading
+import concurrent.futures
+import requests
 from tqdm import tqdm
 
 # --- Logger setup ---
@@ -39,6 +42,7 @@ INCLUDE_MARKET_CAP = config.getboolean("Metrics", "include_market_cap")
 
 # ── EUR FX rate cache (fetched once per process, reused across tickers) ──────
 _eur_rate_cache: dict[str, float] = {}
+_eur_rate_lock = threading.Lock()
 
 
 def _get_eur_rate(currency: str) -> float:
@@ -54,22 +58,29 @@ def _get_eur_rate(currency: str) -> float:
     pence = currency == "GBp"
     lookup = "GBP" if pence else currency
 
-    if lookup not in _eur_rate_cache:
-        try:
-            ticker = yf.Ticker(f"{lookup}EUR=X")
-            hist = ticker.history(period="1d")
-            if not hist.empty:
-                _eur_rate_cache[lookup] = float(hist["Close"].iloc[-1])
-            else:
-                _eur_rate_cache[lookup] = 1.0  # fallback: treat as 1:1
-                logging.warning(
-                    f"FX rate not found for {lookup}EUR=X, defaulting to 1.0"
-                )
-        except Exception as e:
-            _eur_rate_cache[lookup] = 1.0
-            logging.warning(f"FX rate fetch failed for {lookup}: {e}")
+    with _eur_rate_lock:
+        if lookup in _eur_rate_cache:
+            rate = _eur_rate_cache[lookup]
+            return rate / 100 if pence else rate
 
-    rate = _eur_rate_cache[lookup]
+    # Fetch outside lock to avoid blocking other threads during network I/O
+    try:
+        ticker = yf.Ticker(f"{lookup}EUR=X")
+        hist = ticker.history(period="1d")
+        if not hist.empty:
+            rate = float(hist["Close"].iloc[-1])
+        else:
+            rate = 1.0  # fallback: treat as 1:1
+            logging.warning(
+                f"FX rate not found for {lookup}EUR=X, defaulting to 1.0"
+            )
+    except Exception as e:
+        rate = 1.0
+        logging.warning(f"FX rate fetch failed for {lookup}: {e}")
+
+    with _eur_rate_lock:
+        _eur_rate_cache[lookup] = rate
+
     return rate / 100 if pence else rate
 
 
@@ -857,15 +868,35 @@ def analyze_tickers(ticker_tuples_list: list[tuple[str, str]]) -> pd.DataFrame:
         logging.warning("No tickers provided.")
         return pd.DataFrame()
 
-    logging.info(f"Analyzing {len(ticker_tuples_list)} tickers (sequential).")
-    results = []
-    for ticker_tuple in tqdm(ticker_tuples_list, desc="Processing tickers"):
-        res = get_financial_metrics(ticker_tuple)
-        results.append(res)
+    max_workers = config.getint("General", "max_workers", fallback=MAX_WORKERS)
+    num_tickers = len(ticker_tuples_list)
+
+    if max_workers > 1 and num_tickers > 1:
+        workers = min(max_workers, num_tickers)
+        logging.info(
+            f"Analyzing {num_tickers} tickers in parallel ({workers} workers)."
+        )
+        with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
+            results = list(
+                tqdm(
+                    executor.map(get_financial_metrics, ticker_tuples_list),
+                    total=num_tickers,
+                    desc="Processing tickers",
+                )
+            )
+    else:
+        logging.info(f"Analyzing {num_tickers} tickers (sequential).")
+        results = []
+        for ticker_tuple in tqdm(ticker_tuples_list, desc="Processing tickers"):
+            res = get_financial_metrics(ticker_tuple)
+            results.append(res)
 
     df = pd.DataFrame(results)
 
-    sort_column = SORT_BY_COLUMN
+    sort_column = config.get("General", "sort_by_column", fallback=SORT_BY_COLUMN)
+    sort_ascending = config.getboolean(
+        "General", "sort_ascending", fallback=SORT_ASCENDING
+    )
     alias_map = {
         "KGV": "P/E (KGV)",
         "PE": "P/E (KGV)",
@@ -895,7 +926,7 @@ def analyze_tickers(ticker_tuples_list: list[tuple[str, str]]) -> pd.DataFrame:
         try:
             df = df.sort_values(
                 by=sort_column,
-                ascending=SORT_ASCENDING,
+                ascending=sort_ascending,
                 na_position="last",
                 key=lambda col: (
                     pd.to_numeric(col, errors="coerce")
@@ -905,10 +936,10 @@ def analyze_tickers(ticker_tuples_list: list[tuple[str, str]]) -> pd.DataFrame:
             )
         except Exception:
             df = df.sort_values(
-                by=sort_column, ascending=SORT_ASCENDING, na_position="last"
+                by=sort_column, ascending=sort_ascending, na_position="last"
             )
     else:
-        logging.warning(f"Sort column '{SORT_BY_COLUMN}' not found.")
+        logging.warning(f"Sort column '{sort_column}' not found.")
 
     return df
 
@@ -928,3 +959,45 @@ def get_price_history(yahoo_symbol: str, period: str = "1y") -> pd.DataFrame:
     except Exception as e:
         logging.error(f"History fetch failed for {yahoo_symbol}: {e}")
         return pd.DataFrame()
+
+
+def search_company(query: str) -> list[dict]:
+    """
+    Search Yahoo Finance for companies matching a name or ticker query.
+    Returns a list of dicts with symbol, name, exchange, and type.
+    """
+    if not query or len(query.strip()) < 2:
+        return []
+    url = "https://query2.finance.yahoo.com/v1/finance/search"
+    params = {
+        "q": query.strip(),
+        "lang": "en-US",
+        "region": "US",
+        "quotesCount": 10,
+        "newsCount": 0,
+        "enableFuzzyQuery": "false",
+    }
+    headers = {"User-Agent": "Mozilla/5.0"}
+    try:
+        resp = requests.get(url, params=params, headers=headers, timeout=5)
+        resp.raise_for_status()
+        data = resp.json()
+        results = []
+        for q in data.get("quotes", []):
+            if q.get("quoteType") in ("EQUITY", "ETF", "MUTUALFUND"):
+                results.append(
+                    {
+                        "symbol": q.get("symbol", ""),
+                        "name": (
+                            q.get("longname")
+                            or q.get("shortname")
+                            or q.get("symbol", "")
+                        ),
+                        "exchange": q.get("exchDisp") or q.get("exchange", ""),
+                        "type": q.get("quoteType", ""),
+                    }
+                )
+        return results
+    except Exception as e:
+        logging.debug(f"Company search failed for '{query}': {e}")
+        return []

@@ -3,7 +3,11 @@ from typing import List, Optional
 import logging
 import configparser
 
-from financial_analyzer import analyze_tickers, parse_and_convert_tickers
+from financial_analyzer import (
+    analyze_tickers,
+    parse_and_convert_tickers,
+    search_company,
+)
 
 app = FastAPI(
     title="Financial Analyzer API",
@@ -23,6 +27,16 @@ async def read_root():
     return {
         "message": "Welcome to the Financial Analyzer API! Visit /docs for API documentation."
     }
+
+
+@app.get("/search", response_model=List[dict])
+async def search_tickers(
+    q: str = Query(..., min_length=2, description="Company name or ticker query"),
+):
+    """
+    Search Yahoo Finance for companies matching a query string.
+    """
+    return search_company(q)
 
 
 @app.get("/analyze", response_model=List[dict])

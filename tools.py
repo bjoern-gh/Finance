@@ -1,19 +1,28 @@
 import portfolio_manager as pm
-from financial_analyzer import get_financial_metrics, parse_and_convert_tickers
+from financial_analyzer import (
+    analyze_tickers,
+    get_financial_metrics,
+    search_company,
+)
 
 # This module provides tools for the Financial Analysis Agent.
 # Each function is designed to be called by an LLM to perform specific actions.
 
 
-def get_portfolio_info() -> str:
+def get_portfolio_info(portfolio_name: str) -> str:
     """
     Returns the current portfolio name and a list of tickers.
     Use this to understand what stocks are currently being tracked.
     """
-    # Since we want to avoid st dependency in tools, we'll assume state is passed or
-    # we'll use a global-ish approach if necessary, but better to pass it.
-    # For now, let's just provide a way to list them.
-    pass
+    data = pm.load_portfolio(portfolio_name)
+    tickers = data.get("tickers", [])
+    if not tickers:
+        return f"Portfolio '{portfolio_name}' is empty."
+    lines = [f"Portfolio: {portfolio_name} ({len(tickers)} stocks):"]
+    for t in tickers:
+        name = t.get("display_name") or t.get("original")
+        lines.append(f"- {name} ({t.get('yahoo')})")
+    return "\n".join(lines)
 
 
 def list_portfolios() -> str:
@@ -38,11 +47,12 @@ def get_analysis_for_ticker(ticker_tuple: tuple[str, str]) -> str:
 
     # Convert to a readable string for the agent
     summary = f"Metrics for {result.get('Company')} ({result.get('Yahoo Symbol')}):\n"
-    summary += f"- Price: {result.get('Price')}\n"
+    summary += f"- Price: {result.get('Price')} {result.get('Currency', '')}\n"
     summary += f"- Trend: {result.get('Trend')}\n"
     summary += f"- Valuation: {result.get('Valuation')}\n"
     summary += f"- RSI: {result.get('RSI')}\n"
     summary += f"- SMA200: {result.get('SMA200')}\n"
+    summary += f"- Business Model: {result.get('Business Model')}\n"
     return summary
 
 
@@ -73,22 +83,17 @@ def get_market_search(query: str) -> str:
     Searches Yahoo Finance for companies matching a query.
     Returns a list of symbols and names.
     """
-    results = parse_and_convert_tickers(query)
-    if not results:
-        return "No results found for that query."
-
-    # We need to fetch actual names for these
-    # This is a simplified version, in a real agent we might want the full search_company result
-    from financial_analyzer import search_company
+    if not query:
+        return "Please provide a search query."
 
     search_results = search_company(query)
     if not search_results:
-        return "No results found."
+        return f"No results found for '{query}'."
 
-    summary = "Found the following matches:\n"
+    summary = f"Found {len(search_results)} matches for '{query}':\n"
     for r in search_results[:5]:
-        summary += f"- {r['name']} ({r['symbol']}) - {r['exchange']}\n"
-    return summary
+        summary += f"- {r.get('name')} ({r.get('symbol')}) - {r.get('exchange')}\n"
+    return summary.strip()
 
 
 def run_bulk_analysis(portfolio_name: str) -> str:
@@ -96,5 +101,22 @@ def run_bulk_analysis(portfolio_name: str) -> str:
     Runs a full analysis on all tickers in the specified portfolio.
     Returns a summary of the results.
     """
-    # Better to pass the tickers list into this tool.
-    pass
+    data = pm.load_portfolio(portfolio_name)
+    tickers = data.get("tickers", [])
+    if not tickers:
+        return f"Portfolio '{portfolio_name}' has no tickers to analyze."
+
+    ticker_tuples = [
+        (t.get("original", t.get("yahoo")), t.get("yahoo")) for t in tickers
+    ]
+    df = analyze_tickers(ticker_tuples)
+    if df.empty:
+        return f"No analysis results returned for '{portfolio_name}'."
+
+    lines = [f"Analysis results for '{portfolio_name}':"]
+    for _, row in df.iterrows():
+        lines.append(
+            f"- {row.get('Company')} ({row.get('Yahoo Symbol')}): Price={row.get('Price')}, "
+            f"Trend={row.get('Trend')}, Valuation={row.get('Valuation')}"
+        )
+    return "\n".join(lines)

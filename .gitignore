@@ -1,6 +1,6 @@
 # IDE-specific files
-Finance.iml
-.idea/modules.xml
+.idea/
+*.iml
 
 # Python
 __pycache__/

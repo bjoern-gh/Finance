@@ -6,7 +6,6 @@ import hashlib
 import io
 import json
 import re
-import requests
 import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
@@ -19,6 +18,7 @@ from financial_analyzer import (
     analyze_tickers,
     parse_and_convert_tickers,
     get_price_history,
+    search_company as search_company_backend,
 )
 
 # ── Page config ──────────────────────────────────────────────────────────────
@@ -92,22 +92,22 @@ def render_login():
     if st.session_state.get("authenticated"):
         return True
 
-    col = st.columns([1, 1, 1])[1]
+    col = st.columns([1, 1.2, 1])[1]
     with col:
-        st.markdown("<br><br>", unsafe_allow_html=True)
-        st.title("📈 Financial Analysis")
-        st.subheader("Sign in")
+        with st.container(border=True):
+            st.title(":material/trending_up: Financial Analysis")
+            st.subheader("Sign in")
 
-        username = st.text_input("Username", key="login_username")
-        password = st.text_input("Password", type="password", key="login_password")
+            username = st.text_input("Username", key="login_username")
+            password = st.text_input("Password", type="password", key="login_password")
 
-        if st.button("Sign in", type="primary", width="stretch"):
-            if check_password(username, password):
-                st.session_state.authenticated = True
-                st.session_state.auth_user = username
-                st.rerun()
-            else:
-                st.error("Invalid username or password.")
+            if st.button("Sign in", type="primary", width="stretch"):
+                if check_password(username, password):
+                    st.session_state.authenticated = True
+                    st.session_state.auth_user = username
+                    st.rerun()
+                else:
+                    st.error("Invalid username or password.")
 
     return False
 
@@ -118,38 +118,7 @@ def render_login():
 @st.cache_data(ttl=60)
 def search_company(query: str) -> list[dict]:
     """Search Yahoo Finance for companies matching a name or ticker query."""
-    if not query or len(query) < 2:
-        return []
-    url = "https://query2.finance.yahoo.com/v1/finance/search"
-    params = {
-        "q": query,
-        "lang": "en-US",
-        "region": "US",
-        "quotesCount": 10,
-        "newsCount": 0,
-        "enableFuzzyQuery": "false",
-    }
-    headers = {"User-Agent": "Mozilla/5.0"}
-    try:
-        resp = requests.get(url, params=params, headers=headers, timeout=5)
-        resp.raise_for_status()
-        data = resp.json()
-        results = []
-        for q in data.get("quotes", []):
-            if q.get("quoteType") in ("EQUITY", "ETF", "MUTUALFUND"):
-                results.append(
-                    {
-                        "symbol": q.get("symbol", ""),
-                        "name": q.get("longname")
-                        or q.get("shortname")
-                        or q.get("symbol", ""),
-                        "exchange": q.get("exchDisp") or q.get("exchange", ""),
-                        "type": q.get("quoteType", ""),
-                    }
-                )
-        return results
-    except Exception:
-        return []
+    return search_company_backend(query)
 
 
 @st.cache_data(ttl=300)
@@ -434,13 +403,13 @@ def get_current_tickers() -> list[dict]:
 def render_sidebar():
     # User info + logout
     st.sidebar.caption(f"Signed in as **{st.session_state.auth_user}**")
-    if st.sidebar.button("Sign out", width="stretch"):
+    if st.sidebar.button(":material/logout: Sign out", width="stretch"):
         st.session_state.authenticated = False
         st.session_state.auth_user = ""
         st.rerun()
 
     st.sidebar.divider()
-    st.sidebar.title("📁 Portfolios")
+    st.sidebar.subheader(":material/folder: Portfolios")
 
     portfolios = pm.list_portfolios()
 
@@ -469,11 +438,13 @@ def render_sidebar():
     st.sidebar.divider()
 
     col1, col2 = st.sidebar.columns(2)
-    if col1.button("＋ New", width="stretch"):
+    if col1.button(":material/add: New", width="stretch"):
         st.session_state.creating_portfolio = True
         st.session_state.renaming_portfolio = False
 
-    if st.session_state.current_portfolio and col2.button("✎ Rename", width="stretch"):
+    if st.session_state.current_portfolio and col2.button(
+        ":material/edit: Rename", width="stretch"
+    ):
         st.session_state.renaming_portfolio = True
         st.session_state.creating_portfolio = False
 
@@ -505,7 +476,7 @@ def render_sidebar():
     if st.session_state.current_portfolio:
         st.sidebar.divider()
         if st.sidebar.button(
-            f"🗑️ Delete '{st.session_state.current_portfolio}'",
+            f":material/delete: Delete '{st.session_state.current_portfolio}'",
             type="secondary",
             width="stretch",
         ):
@@ -528,187 +499,200 @@ def render_build_tab():
     portfolio_name = st.session_state.current_portfolio
 
     # ── Search ──
-    st.subheader("🔍 Search & Add Companies")
-    search_col, _ = st.columns([3, 1])
-    with search_col:
-        query = st.text_input(
-            "Search by company name or ticker symbol",
-            placeholder="e.g. Apple, SAP, ASML, NVDA...",
-            key="company_search",
-        )
+    with st.container(border=True):
+        st.subheader(":material/search: Search & Add Companies")
+        search_col, _ = st.columns([3, 1])
+        with search_col:
+            query = st.text_input(
+                "Search by company name or ticker symbol",
+                placeholder="e.g. Apple, SAP, ASML, NVDA...",
+                key="company_search",
+            )
 
-    if query:
-        with st.spinner("Searching..."):
-            results = search_company(query)
+        if query:
+            with st.spinner("Searching..."):
+                results = search_company(query)
 
-        if results:
-            for r in results[:8]:
-                c1, c2, c3 = st.columns([4, 1, 1])
-                c1.markdown(
-                    f"**{r['name']}** &nbsp; `{r['symbol']}` &nbsp; *{r['exchange']}* &nbsp; {r['type']}"
-                )
-                already = any(t["yahoo"] == r["symbol"] for t in tickers)
-                if already:
-                    c2.markdown("✅ Added")
-                else:
-                    if c2.button("＋ Add", key=f"add_{r['symbol']}"):
-                        pm.add_ticker(
-                            portfolio_name, r["symbol"], r["symbol"], r["name"]
-                        )
-                        st.session_state.analysis_results = None
-                        st.rerun()
-        else:
-            st.caption("No results found.")
-
-    st.divider()
+            if results:
+                for r in results[:8]:
+                    c1, c2 = st.columns([4, 1])
+                    c1.markdown(
+                        f"**{r['name']}** &nbsp; `{r['symbol']}` &nbsp; *{r['exchange']}* &nbsp; {r['type']}"
+                    )
+                    already = any(t["yahoo"] == r["symbol"] for t in tickers)
+                    if already:
+                        c2.caption("Added")
+                    else:
+                        if c2.button(
+                            ":material/add: Add",
+                            key=f"add_{r['symbol']}",
+                            width="stretch",
+                        ):
+                            pm.add_ticker(
+                                portfolio_name, r["symbol"], r["symbol"], r["name"]
+                            )
+                            st.session_state.analysis_results = None
+                            st.rerun()
+            else:
+                st.caption("No results found.")
 
     # ── Import ──
-    st.subheader("📥 Import from File")
-    st.caption(
-        "Upload a .txt or .csv with one entry per line: "
-        "company names, plain tickers (AAPL), or prefixed tickers (FRA:SAP, NASDAQ:NVDA)."
-    )
-    uploaded = st.file_uploader(
-        "Choose file", type=["txt", "csv"], label_visibility="collapsed"
-    )
-
-    if uploaded and st.session_state.import_preview is None:
-        content = uploaded.read().decode("utf-8", errors="ignore")
-        entries = parse_import_file(content)
-        if entries:
-            with st.spinner(f"Resolving {len(entries)} entries..."):
-                resolved, unresolved = resolve_import_entries(entries)
-            st.session_state.import_preview = {
-                "resolved": resolved,
-                "unresolved": unresolved,
-            }
-            st.rerun()
-
-    if st.session_state.import_preview:
-        preview = st.session_state.import_preview
-        resolved = preview["resolved"]
-        unresolved = preview["unresolved"]
-
-        st.markdown(f"**Found {len(resolved)} matches:**")
-        if resolved:
-            preview_df = pd.DataFrame(resolved)[["display_name", "yahoo", "original"]]
-            preview_df.columns = ["Company Name", "Yahoo Symbol", "Original"]
-            st.dataframe(preview_df, width="stretch", hide_index=True)
-
-            if st.button("✅ Add all to portfolio", type="primary"):
-                added = 0
-                for t in resolved:
-                    if pm.add_ticker(
-                        portfolio_name, t["original"], t["yahoo"], t["display_name"]
-                    ):
-                        added += 1
-                st.session_state.import_preview = None
-                st.session_state.analysis_results = None
-                st.success(f"Added {added} new tickers.")
-                st.rerun()
-
-        if unresolved:
-            st.warning(
-                f"Could not resolve {len(unresolved)} entries: {', '.join(unresolved)}"
-            )
-
-        if st.button("Cancel import"):
-            st.session_state.import_preview = None
-            st.rerun()
-
-    st.divider()
-
-    # ── Current portfolio list ──
-    st.subheader(f"📋 Current Portfolio — {portfolio_name} ({len(tickers)} stocks)")
-
-    if not tickers:
-        st.info("No stocks yet. Search above or import a file.")
-    else:
-        for i, t in enumerate(tickers):
-            c1, c2, c3 = st.columns([2, 4, 1])
-            c1.code(t["yahoo"])
-            c2.write(t.get("display_name") or t["original"])
-            if c3.button("✕", key=f"remove_{t['yahoo']}_{i}", help="Remove"):
-                pm.remove_ticker(portfolio_name, t["yahoo"])
-                st.session_state.analysis_results = None
-                st.rerun()
-
-    st.divider()
-
-    # ── Portfolio export / import ──
-    st.subheader("📤 Export / Import Portfolio")
-    exp_col, imp_col = st.columns(2)
-
-    with exp_col:
-        st.markdown("**Export**")
-        st.caption("Download this portfolio as a JSON file to share or back up.")
-        portfolio_data = pm.load_portfolio(portfolio_name)
-        export_bytes = json.dumps(portfolio_data, indent=2, ensure_ascii=False).encode(
-            "utf-8"
-        )
-        st.download_button(
-            label=f"⬇️ Export '{portfolio_name}'",
-            data=export_bytes,
-            file_name=f"{portfolio_name}.json",
-            mime="application/json",
-            width="stretch",
-        )
-
-    with imp_col:
-        st.markdown("**Import portfolio from file**")
+    with st.container(border=True):
+        st.subheader(":material/upload_file: Import from File")
         st.caption(
-            "Upload a previously exported portfolio JSON. You can rename it before saving."
+            "Upload a .txt or .csv with one entry per line: "
+            "company names, plain tickers (AAPL), or prefixed tickers (FRA:SAP, NASDAQ:NVDA)."
         )
-        portfolio_file = st.file_uploader(
-            "Choose portfolio JSON",
-            type=["json"],
-            key="portfolio_json_upload",
-            label_visibility="collapsed",
+        uploaded = st.file_uploader(
+            "Choose file", type=["txt", "csv"], label_visibility="collapsed"
         )
 
-        if portfolio_file and st.session_state.portfolio_import_preview is None:
-            try:
-                raw = json.loads(portfolio_file.read().decode("utf-8"))
-                # Validate basic schema
-                if not isinstance(raw.get("tickers"), list):
-                    st.error("Invalid portfolio file: missing 'tickers' list.")
-                else:
-                    st.session_state.portfolio_import_preview = raw
+        if uploaded and st.session_state.import_preview is None:
+            content = uploaded.read().decode("utf-8", errors="ignore")
+            entries = parse_import_file(content)
+            if entries:
+                with st.spinner(f"Resolving {len(entries)} entries..."):
+                    resolved, unresolved = resolve_import_entries(entries)
+                st.session_state.import_preview = {
+                    "resolved": resolved,
+                    "unresolved": unresolved,
+                }
+                st.rerun()
+
+        if st.session_state.import_preview:
+            preview = st.session_state.import_preview
+            resolved = preview["resolved"]
+            unresolved = preview["unresolved"]
+
+            st.markdown(f"**Found {len(resolved)} matches:**")
+            if resolved:
+                preview_df = pd.DataFrame(resolved)[
+                    ["display_name", "yahoo", "original"]
+                ]
+                preview_df.columns = ["Company Name", "Yahoo Symbol", "Original"]
+                st.dataframe(preview_df, width="stretch", hide_index=True)
+
+                if st.button(":material/check: Add all to portfolio", type="primary"):
+                    added = 0
+                    for t in resolved:
+                        if pm.add_ticker(
+                            portfolio_name,
+                            t["original"],
+                            t["yahoo"],
+                            t["display_name"],
+                        ):
+                            added += 1
+                    st.session_state.import_preview = None
+                    st.session_state.analysis_results = None
+                    st.success(f"Added {added} new tickers.")
                     st.rerun()
-            except Exception as e:
-                st.error(f"Could not read file: {e}")
 
-        if st.session_state.portfolio_import_preview:
-            raw = st.session_state.portfolio_import_preview
-            suggested_name = raw.get("name", "Imported Portfolio")
-            existing = pm.list_portfolios()
-
-            import_name = st.text_input(
-                "Save as:", value=suggested_name, key="portfolio_import_name"
-            )
-            ticker_count = len(raw.get("tickers", []))
-            st.caption(
-                f"{ticker_count} stock{'s' if ticker_count != 1 else ''} in this portfolio"
-            )
-
-            warn = import_name.strip() in existing
-            if warn:
+            if unresolved:
                 st.warning(
-                    f"A portfolio named '{import_name.strip()}' already exists — it will be overwritten."
+                    f"Could not resolve {len(unresolved)} entries: {', '.join(unresolved)}"
                 )
 
-            ci1, ci2 = st.columns(2)
-            if ci1.button("✅ Save", type="primary", width="stretch"):
-                if import_name.strip():
-                    pm.save_portfolio(import_name.strip(), raw["tickers"])
-                    st.session_state.current_portfolio = import_name.strip()
-                    st.session_state.portfolio_import_preview = None
-                    st.session_state.analysis_results = None
-                    st.success(f"Portfolio '{import_name.strip()}' imported.")
-                    st.rerun()
-            if ci2.button("Cancel", width="stretch"):
-                st.session_state.portfolio_import_preview = None
+            if st.button("Cancel import"):
+                st.session_state.import_preview = None
                 st.rerun()
+
+    # ── Current portfolio list ──
+    with st.container(border=True):
+        st.subheader(
+            f":material/list_alt: Current Portfolio — {portfolio_name} ({len(tickers)} stocks)"
+        )
+
+        if not tickers:
+            st.info("No stocks yet. Search above or import a file.")
+        else:
+            for i, t in enumerate(tickers):
+                c1, c2, c3 = st.columns([2, 5, 1])
+                c1.code(t["yahoo"])
+                c2.write(t.get("display_name") or t["original"])
+                if c3.button(
+                    ":material/close:",
+                    key=f"remove_{t['yahoo']}_{i}",
+                    help="Remove",
+                ):
+                    pm.remove_ticker(portfolio_name, t["yahoo"])
+                    st.session_state.analysis_results = None
+                    st.rerun()
+
+    # ── Portfolio export / import ──
+    with st.container(border=True):
+        st.subheader(":material/sync_alt: Export / Import Portfolio")
+        exp_col, imp_col = st.columns(2)
+
+        with exp_col:
+            st.markdown("**Export**")
+            st.caption("Download this portfolio as a JSON file to share or back up.")
+            portfolio_data = pm.load_portfolio(portfolio_name)
+            export_bytes = json.dumps(
+                portfolio_data, indent=2, ensure_ascii=False
+            ).encode("utf-8")
+            st.download_button(
+                label=f":material/download: Export '{portfolio_name}'",
+                data=export_bytes,
+                file_name=f"{portfolio_name}.json",
+                mime="application/json",
+                width="stretch",
+            )
+
+        with imp_col:
+            st.markdown("**Import portfolio from file**")
+            st.caption(
+                "Upload a previously exported portfolio JSON. You can rename it before saving."
+            )
+            portfolio_file = st.file_uploader(
+                "Choose portfolio JSON",
+                type=["json"],
+                key="portfolio_json_upload",
+                label_visibility="collapsed",
+            )
+
+            if portfolio_file and st.session_state.portfolio_import_preview is None:
+                try:
+                    raw = json.loads(portfolio_file.read().decode("utf-8"))
+                    # Validate basic schema
+                    if not isinstance(raw.get("tickers"), list):
+                        st.error("Invalid portfolio file: missing 'tickers' list.")
+                    else:
+                        st.session_state.portfolio_import_preview = raw
+                        st.rerun()
+                except Exception as e:
+                    st.error(f"Could not read file: {e}")
+
+            if st.session_state.portfolio_import_preview:
+                raw = st.session_state.portfolio_import_preview
+                suggested_name = raw.get("name", "Imported Portfolio")
+                existing = pm.list_portfolios()
+
+                import_name = st.text_input(
+                    "Save as:", value=suggested_name, key="portfolio_import_name"
+                )
+                ticker_count = len(raw.get("tickers", []))
+                st.caption(
+                    f"{ticker_count} stock{'s' if ticker_count != 1 else ''} in this portfolio"
+                )
+
+                warn = import_name.strip() in existing
+                if warn:
+                    st.warning(
+                        f"A portfolio named '{import_name.strip()}' already exists — it will be overwritten."
+                    )
+
+                ci1, ci2 = st.columns(2)
+                if ci1.button(":material/check: Save", type="primary", width="stretch"):
+                    if import_name.strip():
+                        pm.save_portfolio(import_name.strip(), raw["tickers"])
+                        st.session_state.current_portfolio = import_name.strip()
+                        st.session_state.portfolio_import_preview = None
+                        st.session_state.analysis_results = None
+                        st.success(f"Portfolio '{import_name.strip()}' imported.")
+                        st.rerun()
+                if ci2.button("Cancel", width="stretch"):
+                    st.session_state.portfolio_import_preview = None
+                    st.rerun()
 
 
 # ── Tab: Analysis ─────────────────────────────────────────────────────────────
@@ -728,7 +712,9 @@ def render_analysis_tab():
     ticker_tuples = tuple((t["original"], t["yahoo"]) for t in tickers)
 
     col1, col2 = st.columns([2, 5])
-    run = col1.button("▶️ Run Analysis", type="primary", width="stretch")
+    run = col1.button(
+        ":material/play_arrow: Run Analysis", type="primary", width="stretch"
+    )
     col2.caption(f"Analyzing {len(tickers)} stocks · Results cached for 5 min")
 
     if run:
@@ -750,7 +736,7 @@ def render_analysis_tab():
     failed_df = df[df["Status"] != "OK"].copy()
 
     if not success_df.empty:
-        st.markdown(f"### Results — {len(success_df)} stocks loaded")
+        st.subheader(f":material/check_circle: Results — {len(success_df)} stocks loaded")
 
         display_cols = [
             "Company",
@@ -782,7 +768,7 @@ def render_analysis_tab():
         view_df = success_df.copy()
         if "Business Model" in success_df.columns or "Sector" in success_df.columns:
             with st.expander(
-                "🔍 Filter Options (Business Model & Sector)", expanded=False
+                "Filter Options (Business Model & Sector)", expanded=False
             ):
                 f1, f2 = st.columns(2)
 
@@ -845,15 +831,14 @@ def render_analysis_tab():
                     by="Market Cap", ascending=True
                 )
 
-            st.markdown("### 🔥 Buying Opportunities")
+            st.subheader(":material/local_fire_department: Buying Opportunities")
             st.caption(
                 "Stocks in your portfolio with a **Cheap** or **Very Cheap** valuation."
             )
             rec_styled = style_dataframe(recommended_df[existing_cols])
             st.dataframe(rec_styled, width="stretch", hide_index=True)
-            st.markdown("<br>", unsafe_allow_html=True)
 
-        st.markdown("### 📋 Full Portfolio Analysis")
+        st.subheader(":material/table_chart: Full Portfolio Analysis")
         styled = style_dataframe(view_df[existing_cols])
         st.dataframe(styled, width="stretch", hide_index=True)
 
@@ -861,7 +846,7 @@ def render_analysis_tab():
         dl1, dl2, _ = st.columns([1, 1, 4])
         csv_data = success_df[existing_cols].to_csv(index=False).encode("utf-8")
         dl1.download_button(
-            "⬇️ CSV",
+            ":material/download: CSV",
             data=csv_data,
             file_name=f"{portfolio_name}_analysis.csv",
             mime="text/csv",
@@ -878,7 +863,7 @@ def render_analysis_tab():
                     writer, index=False, sheet_name="Recommended Buys"
                 )
         dl2.download_button(
-            "⬇️ Excel",
+            ":material/download: Excel",
             data=buffer.getvalue(),
             file_name=f"{portfolio_name}_analysis.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -886,7 +871,7 @@ def render_analysis_tab():
         )
 
     if not failed_df.empty:
-        with st.expander(f"⚠️ {len(failed_df)} tickers with errors"):
+        with st.expander(f":material/warning: {len(failed_df)} tickers with errors"):
             st.dataframe(
                 failed_df[["Original Ticker", "Yahoo Symbol", "Company", "Status"]],
                 width="stretch",
@@ -913,9 +898,16 @@ def render_charts_tab():
         for t in tickers
     }
 
-    c1, c2 = st.columns([3, 1])
+    c1, c2 = st.columns([3, 2])
     selected_label = c1.selectbox("Select stock", list(options.keys()))
-    period = c2.selectbox("Period", ["6mo", "1y", "2y", "5y", "max"], index=1)
+    period = c2.segmented_control(
+        "Period",
+        ["6mo", "1y", "2y", "5y", "max"],
+        default="1y",
+        selection_mode="single",
+    )
+    if not period:
+        period = "1y"
 
     yahoo_symbol = options[selected_label]
     company_name = selected_label.split("(")[0].strip()
@@ -953,10 +945,16 @@ def main():
 
     render_sidebar()
 
-    st.title("📈 Financial Analysis")
+    st.title(":material/trending_up: Financial Analysis")
     st.caption("Powered by Yahoo Finance · yfinance · Streamlit")
 
-    tab1, tab2, tab3 = st.tabs(["🔍 Build Portfolio", "📊 Analysis", "📈 Charts"])
+    tab1, tab2, tab3 = st.tabs(
+        [
+            ":material/add_circle: Build Portfolio",
+            ":material/analytics: Analysis",
+            ":material/show_chart: Charts",
+        ]
+    )
     with tab1:
         render_build_tab()
     with tab2:
