@@ -12,12 +12,15 @@ from financial_analyzer import (
     format_large_number,
     get_financial_metrics,
     _calculate_sma,
+    _calculate_rsi,
     _calculate_pe_ratio,
     _determine_ath_atl_status,
     _determine_valuation_status,
     _get_optional_metrics,
     _determine_trend_status,
     determine_business_model,
+    _get_analyst_metrics,
+    _calculate_buy_score,
 )
 
 
@@ -108,6 +111,17 @@ def test_calculate_sma_value(close_prices, sma_period, expected_sma):
             100,
             pd.NA,
         ),  # No PE, no EPS, changed to pd.NA
+        (
+            {
+                "trailingPE": None,
+                "forwardPE": None,
+                "trailingEps": 2.0,
+                "currency": "GBp",
+                "financialCurrency": "GBP",
+            },
+            2000,
+            10.0,
+        ),  # Pence to Pounds normalization (2000p = £20 / £2 = 10)
         ({}, 100, pd.NA),  # Empty info, changed to pd.NA
     ],
 )
@@ -117,6 +131,25 @@ def test_calculate_pe_ratio(info, curr_p, expected_pe):
         assert pd.isna(pe)
     else:
         assert pe == expected_pe
+
+
+@pytest.mark.parametrize(
+    "close_prices, period, expected_rsi",
+    [
+        ([], 14, pd.NA),
+        ([100], 14, pd.NA),
+        ([100, 101, 102, 103, 104, 105], 14, 100.0),
+        ([105, 104, 103, 102, 101, 100], 14, 0.0),
+        ([100, 101, 102, 103, 104, 100], 14, 50.0),
+    ],
+)
+def test_calculate_rsi(close_prices, period, expected_rsi):
+    hist = pd.DataFrame({"Close": close_prices})
+    rsi = _calculate_rsi(hist, period)
+    if pd.isna(expected_rsi):
+        assert pd.isna(rsi)
+    else:
+        assert rsi == expected_rsi
 
 
 @pytest.mark.parametrize(
@@ -236,6 +269,61 @@ def test_get_optional_metrics(
             assert mkt_cap == expected_mkt_cap
 
 
+def test_get_analyst_metrics():
+    info = {
+        "targetMeanPrice": 150.0,
+        "recommendationKey": "strong_buy",
+        "numberOfAnalystOpinions": 24,
+    }
+    res = _get_analyst_metrics(info, 100.0)
+    assert res["Target Price"] == 150.0
+    assert res["Target Upside (%)"] == 50.0
+    assert res["Recommendation"] == "Strong Buy (24)"
+
+    # Missing info
+    res_empty = _get_analyst_metrics({}, 100.0)
+    assert pd.isna(res_empty["Target Price"])
+    assert pd.isna(res_empty["Target Upside (%)"])
+    assert res_empty["Recommendation"] == "N/A"
+
+
+def test_calculate_buy_score():
+    # Top opportunity setup
+    top_stock = {
+        "P/E (KGV)": 12.0,
+        "Valuation": "Very Cheap (PEG)",
+        "Trend": "STRONG BUY",
+        "RSI": 45.0,
+        "D/E Ratio": 0.4,
+        "Profit Margin (%)": 25.0,
+        "Revenue Growth (%)": 20.0,
+        "Target Upside (%)": 35.0,
+        "Recommendation": "Strong Buy (10)",
+        "52W Low (%)": 5.0,
+    }
+    score, rating, strengths, risks = _calculate_buy_score(top_stock)
+    assert score >= 75
+    assert rating == "Top Opportunity"
+    assert len(strengths) > 0
+    assert len(risks) == 0
+
+    # Value trap setup
+    trap_stock = {
+        "P/E (KGV)": 6.0,
+        "Valuation": "Cheap",
+        "Trend": "BEARISH",
+        "RSI": 35.0,
+        "D/E Ratio": 3.0,
+        "Profit Margin (%)": -10.0,
+        "Revenue Growth (%)": -15.0,
+        "Target Upside (%)": 5.0,
+        "Recommendation": "Hold (2)",
+    }
+    score, rating, strengths, risks = _calculate_buy_score(trap_stock)
+    assert rating == "Value Trap Risk"
+    assert any("Value Trap" in r for r in risks)
+
+
 @pytest.mark.parametrize(
     "curr_p, sma200, sma50, rsi, pe_v, kgv_max_threshold, expected_trend",
     [
@@ -248,6 +336,24 @@ def test_get_optional_metrics(
             25,
             "STRONG BUY",
         ),  # Price > SMA50 > SMA200, RSI ok, PE ok
+        (
+            105,
+            100,
+            95,
+            50,
+            20,
+            25,
+            "BULLISH",
+        ),  # Price > SMA200 but SMA50 < SMA200 (Death Cross), so BULLISH instead of STRONG BUY
+        (
+            105,
+            100,
+            100,
+            50,
+            20,
+            25,
+            "STRONG BUY",
+        ),  # Price > SMA50 >= SMA200, RSI ok, PE ok
         (
             105,
             100,
@@ -375,8 +481,8 @@ def test_get_financial_metrics_success(mock_logging, mock_config, MockTicker):
             result["ATH/ATL"] == "Normal"
         )  # Current price 105, ATH 120, ATL 80. 5% threshold: 120*0.95 = 114, 80*1.05 = 84. 105 is between 84 and 114.
         assert (
-            result["Valuation"] == "Fair (Good PEG)"
-        )  # PE 25 (Fair), PEG 25/(10*100) = 2.5 (High PEG) -> should be Fair (Hoher PEG)
+            result["Valuation"] == "Fair (High PEG)"
+        )  # PE 25 (Fair), PEG 25/(10*100) = 2.5 (High PEG)
         assert result["Status"] == "OK"
         assert result["Dividend Yield (%)"] == 0.50
         assert result["Market Cap"] == "2.00T"
@@ -643,7 +749,9 @@ def test_get_financial_metrics_no_pe_but_eps(mock_logging, mock_config, MockTick
         assert result["Price"] == 100.00
         assert result["SMA200"] == 102.00  # (104+100)/2
         assert result["SMA50"] == 102.00
-        assert result["RSI"] == 100.0
+        assert (
+            result["RSI"] == 50.0
+        )  # Net change 0 over window (4 gains of +1, 1 loss of -4)
         assert result["P/E (KGV)"] == 25.00
         assert result["Trend"] == "BEARISH"  # Price 100 is not > SMA 102
         assert result["ATH/ATL"] == "Normal"

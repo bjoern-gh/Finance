@@ -71,9 +71,7 @@ def _get_eur_rate(currency: str) -> float:
             rate = float(hist["Close"].iloc[-1])
         else:
             rate = 1.0  # fallback: treat as 1:1
-            logging.warning(
-                f"FX rate not found for {lookup}EUR=X, defaulting to 1.0"
-            )
+            logging.warning(f"FX rate not found for {lookup}EUR=X, defaulting to 1.0")
     except Exception as e:
         rate = 1.0
         logging.warning(f"FX rate fetch failed for {lookup}: {e}")
@@ -170,11 +168,10 @@ def _calculate_sma(hist: pd.DataFrame, period: int) -> float:
 
 
 def _calculate_rsi(hist: pd.DataFrame, period: int = 14) -> float:
-    """Calculate Relative Strength Index (RSI).
+    """Calculate Relative Strength Index (RSI) using Wilder's Exponential Smoothing.
 
-    For short histories (< period), uses truncated data to compute a meaningful RSI.
-    Specifically, for data shorter than the period, computes RSI over available deltas
-    excluding the most recent adverse move if present, to reflect underlying strength.
+    For data with at least period + 1 bars, applies Wilder's smoothing (alpha = 1 / period).
+    For shorter histories with at least 2 points, calculates RSI over all available deltas.
     """
     if hist.empty or len(hist) < 2:
         return pd.NA
@@ -183,28 +180,29 @@ def _calculate_rsi(hist: pd.DataFrame, period: int = 14) -> float:
     gain = delta.clip(lower=0)
     loss = -delta.clip(upper=0)
 
-    # For short histories, if the last bar was a loss (down move),
-    # exclude it to avoid skewing the RSI negatively from a single adverse move.
-    if len(hist) < period and len(hist) > 1:
-        if delta.iloc[-1] < 0:
-            # Exclude the last (adverse) bar
-            use_deltas = delta[:-1]
-            avg_gain = use_deltas.clip(lower=0).mean()
-            avg_loss = -use_deltas.clip(upper=0).mean()
-        else:
-            # Include all deltas
-            avg_gain = gain.mean()
-            avg_loss = loss.mean()
+    if len(hist) < period + 1:
+        # Compute over all available deltas (skipping initial NaN)
+        avg_gain = gain.iloc[1:].mean()
+        avg_loss = loss.iloc[1:].mean()
     else:
-        # Standard calculation for longer histories
-        window = period
-        avg_gain = gain.rolling(window=window, min_periods=window).mean().iloc[-1]
-        avg_loss = loss.rolling(window=window, min_periods=window).mean().iloc[-1]
+        # Standard Wilder's exponential smoothing
+        avg_gain = (
+            gain.ewm(alpha=1.0 / period, min_periods=period, adjust=False)
+            .mean()
+            .iloc[-1]
+        )
+        avg_loss = (
+            loss.ewm(alpha=1.0 / period, min_periods=period, adjust=False)
+            .mean()
+            .iloc[-1]
+        )
 
     if pd.isna(avg_gain) or pd.isna(avg_loss):
         return pd.NA
     if avg_loss == 0:
         return 100.0 if avg_gain > 0 else pd.NA
+    if avg_gain == 0:
+        return 0.0
     rs = avg_gain / avg_loss
     return round(100 - (100 / (1 + rs)), 2)
 
@@ -308,7 +306,13 @@ def _calculate_pe_ratio(
     # 3. Trailing or Forward EPS
     eps = info.get("trailingEps") or info.get("forwardEps")
     if eps and isinstance(eps, (int, float)) and eps > 0:
-        return curr_p / eps
+        price = curr_p
+        # Normalize GBp (pence) to GBP if financial currency is GBP
+        curr = info.get("currency", "")
+        fin_curr = info.get("financialCurrency", "")
+        if curr == "GBp" and fin_curr == "GBP":
+            price = curr_p / 100.0
+        return price / eps
 
     # 4. Quarterly financial statement TTM calculation
     if ticker_obj is not None:
@@ -401,14 +405,19 @@ def _determine_trend_status(curr_p, sma200, sma50, rsi, pe_v, kgv_max: int) -> s
         return "HOLD"
 
     above_sma200 = curr_p > sma200
-    # Only consider SMA50 if we have valid PE data (when PE is missing, use stricter threshold)
-    above_sma50 = (not pd.isna(sma50)) and (curr_p > sma50) and (not pd.isna(pe_v))
+    # Golden cross alignment: Price > SMA50 >= SMA200, with valid P/E below threshold
+    golden_cross = (
+        (not pd.isna(sma50))
+        and (curr_p > sma50)
+        and (sma50 >= sma200)
+        and (not pd.isna(pe_v))
+    )
     rsi_ok = pd.isna(rsi) or (30 <= rsi <= 70)
     rsi_overbought = (not pd.isna(rsi)) and rsi > 70
     rsi_oversold = (not pd.isna(rsi)) and rsi < 30
     pe_ok = pd.isna(pe_v) or (isinstance(pe_v, (int, float)) and pe_v < kgv_max)
 
-    if above_sma200 and above_sma50 and rsi_ok and pe_ok:
+    if above_sma200 and golden_cross and rsi_ok and pe_ok:
         return "STRONG BUY"
     elif above_sma200 and rsi_ok and pe_ok:
         return "BULLISH"
@@ -685,6 +694,202 @@ def _get_52w_metrics(info: dict, curr_p: float) -> dict:
     return result
 
 
+# ── Analyst consensus & Buy score calculations ──────────────────────────────
+
+
+def _get_analyst_metrics(info: dict, curr_p: float) -> dict:
+    """Fetch analyst consensus target price, upside potential, and recommendation."""
+    target_mean = info.get("targetMeanPrice")
+    rec_key = info.get("recommendationKey")
+    num_analysts = info.get("numberOfAnalystOpinions")
+
+    result = {
+        "Target Price": pd.NA,
+        "Target Upside (%)": pd.NA,
+        "Recommendation": "N/A",
+    }
+
+    if (
+        target_mean is not None
+        and isinstance(target_mean, (int, float))
+        and target_mean > 0
+    ):
+        result["Target Price"] = round(float(target_mean), 2)
+        if not pd.isna(curr_p) and curr_p > 0:
+            upside = ((target_mean - curr_p) / curr_p) * 100
+            result["Target Upside (%)"] = round(upside, 1)
+
+    if rec_key and isinstance(rec_key, str) and rec_key != "none":
+        rec_clean = rec_key.replace("_", " ").title()
+        if num_analysts and isinstance(num_analysts, int) and num_analysts > 0:
+            result["Recommendation"] = f"{rec_clean} ({num_analysts})"
+        else:
+            result["Recommendation"] = rec_clean
+
+    return result
+
+
+def _calculate_buy_score(metrics: dict) -> tuple[int, str, list[str], list[str]]:
+    """
+    Compute a composite 0-100 Buying Opportunity Score, rating label,
+    and lists of identified strengths and risk flags.
+
+    Pillars (25 pts each):
+    1. Valuation (P/E, PEG, P/S, P/B)
+    2. Trend & Momentum (SMA200, SMA50, Golden Cross, RSI)
+    3. Financial Health (Debt/Equity, Profit Margin, Revenue Growth)
+    4. Catalysts & Margin of Safety (Analyst Upside, Recommendation, 52W Low proximity)
+    """
+    score = 0
+    strengths = []
+    risks = []
+
+    pe = metrics.get("P/E (KGV)")
+    val_status = str(metrics.get("Valuation", ""))
+    trend = str(metrics.get("Trend", ""))
+    rsi = metrics.get("RSI")
+    de = metrics.get("D/E Ratio")
+    margin = metrics.get("Profit Margin (%)")
+    growth = metrics.get("Revenue Growth (%)")
+    upside = metrics.get("Target Upside (%)")
+    rec = str(metrics.get("Recommendation", ""))
+    w52_low = metrics.get("52W Low (%)")
+
+    # ── 1. Valuation (max 25 pts) ──
+    val_pts = 0
+    if isinstance(pe, (int, float)) and not pd.isna(pe) and pe > 0:
+        if pe <= 15:
+            val_pts += 18
+            strengths.append(f"Low P/E multiple ({pe:.1f})")
+        elif pe <= 25:
+            val_pts += 12
+        elif pe <= 35:
+            val_pts += 5
+        else:
+            risks.append(f"Elevated P/E multiple ({pe:.1f})")
+
+        if "PEG" in val_status:
+            if "Very Cheap" in val_status or "Good PEG" in val_status:
+                val_pts += 7
+                strengths.append("Attractive PEG growth ratio")
+            elif "High PEG" in val_status:
+                risks.append("High PEG ratio relative to growth")
+    elif "Cheap" in val_status:
+        val_pts += 15
+        strengths.append("Favorable asset/sales valuation")
+    elif "Fair" in val_status:
+        val_pts += 10
+    score += min(25, val_pts)
+
+    # ── 2. Trend & Momentum (max 25 pts) ──
+    trend_pts = 0
+    if trend == "STRONG BUY":
+        trend_pts += 25
+        strengths.append("Strong Golden Cross trend alignment")
+    elif trend == "BULLISH":
+        trend_pts += 18
+        strengths.append("Trading above 200-day moving average")
+    elif trend == "OVERSOLD":
+        trend_pts += 12
+        strengths.append("Oversold technical bounce potential")
+    elif trend == "HOLD":
+        trend_pts += 8
+    elif trend == "BEARISH":
+        risks.append("Downtrend below 200-day moving average")
+
+    if isinstance(rsi, (int, float)) and not pd.isna(rsi):
+        if 30 <= rsi <= 55:
+            trend_pts += 5
+        elif rsi > 70:
+            risks.append(f"Overbought RSI ({rsi:.1f})")
+    score += min(25, trend_pts)
+
+    # ── 3. Financial Health & Quality (max 25 pts) ──
+    health_pts = 0
+    if isinstance(de, (int, float)) and not pd.isna(de):
+        if de <= 0.8:
+            health_pts += 10
+            strengths.append(f"Conservative debt profile (D/E {de:.2f})")
+        elif de <= 1.5:
+            health_pts += 6
+        else:
+            risks.append(f"Elevated debt-to-equity ({de:.2f})")
+
+    if isinstance(margin, (int, float)) and not pd.isna(margin):
+        if margin >= 20.0:
+            health_pts += 10
+            strengths.append(f"High profit margin ({margin:.1f}%)")
+        elif margin >= 8.0:
+            health_pts += 6
+        elif margin < 0:
+            risks.append(f"Negative profit margin ({margin:.1f}%)")
+
+    if isinstance(growth, (int, float)) and not pd.isna(growth):
+        if growth >= 15.0:
+            health_pts += 5
+            strengths.append(f"Strong YoY revenue expansion ({growth:.1f}%)")
+        elif growth >= 0:
+            health_pts += 3
+        else:
+            risks.append(f"Contracting revenue ({growth:.1f}%)")
+    score += min(25, health_pts)
+
+    # ── 4. Catalysts & Margin of Safety (max 25 pts) ──
+    cat_pts = 0
+    if isinstance(upside, (int, float)) and not pd.isna(upside):
+        if upside >= 30.0:
+            cat_pts += 15
+            strengths.append(f"Significant analyst upside (+{upside:.1f}%)")
+        elif upside >= 15.0:
+            cat_pts += 10
+            strengths.append(f"Moderate analyst upside (+{upside:.1f}%)")
+        elif upside > 0:
+            cat_pts += 5
+        else:
+            risks.append(f"Trading above analyst target ({upside:.1f}%)")
+
+    if any(k in rec.lower() for k in ["strong buy", "buy"]):
+        cat_pts += 10
+        strengths.append(f"Consensus recommendation: {rec}")
+
+    if isinstance(w52_low, (int, float)) and not pd.isna(w52_low) and w52_low <= 10.0:
+        cat_pts += 5
+        strengths.append("Trading near 52-week support")
+    score += min(25, cat_pts)
+
+    # ── Value Trap Detection ──
+    is_value_trap = False
+    if "Cheap" in val_status and trend in ["BEARISH", "HOLD"]:
+        red_flags = 0
+        if isinstance(de, (int, float)) and not pd.isna(de) and de > 2.0:
+            red_flags += 1
+        if isinstance(margin, (int, float)) and not pd.isna(margin) and margin < 0:
+            red_flags += 1
+        if isinstance(growth, (int, float)) and not pd.isna(growth) and growth < -10.0:
+            red_flags += 1
+        if red_flags >= 1:
+            is_value_trap = True
+            risks.insert(
+                0,
+                "⚠️ Value Trap Risk: Low valuation accompanied by weak fundamentals & downtrend",
+            )
+            score = max(0, score - 20)
+
+    # Overall Opportunity Rating
+    if is_value_trap:
+        rating = "Value Trap Risk"
+    elif score >= 75:
+        rating = "Top Opportunity"
+    elif score >= 60:
+        rating = "Good Opportunity"
+    elif score >= 40:
+        rating = "Watchlist"
+    else:
+        rating = "Unfavorable"
+
+    return score, rating, strengths, risks
+
+
 # ── Main data fetcher ────────────────────────────────────────────────────────
 
 
@@ -708,6 +913,11 @@ def get_financial_metrics(ticker_tuple: tuple[str, str]) -> dict:
         "Trend": "N/A",
         "ATH/ATL": "N/A",
         "Valuation": "N/A",
+        "Buy Score": pd.NA,
+        "Opportunity Rating": "N/A",
+        "Target Price": pd.NA,
+        "Target Upside (%)": pd.NA,
+        "Recommendation": "N/A",
         "Currency": "N/A",
         "Price (EUR)": pd.NA,
         "52W High (%)": pd.NA,
@@ -718,6 +928,8 @@ def get_financial_metrics(ticker_tuple: tuple[str, str]) -> dict:
         "Beta": pd.NA,
         "Sector": "N/A",
         "Business Model": "N/A",
+        "Key Strengths": "",
+        "Key Risks": "",
     }
     if INCLUDE_DIVIDEND_YIELD:
         _empty["Dividend Yield (%)"] = pd.NA
@@ -802,19 +1014,27 @@ def get_financial_metrics(ticker_tuple: tuple[str, str]) -> dict:
             rsi_for_trend = rsi_reported if len(hist_short) >= rsi_period + 1 else pd.NA
             pe_v = _calculate_pe_ratio(info, curr_p)
             ath_atl = _determine_ath_atl_status(hist_max, curr_p, ath_threshold)
-            # Apply a small tolerance to PEG threshold in the integrated metric
-            # to better match user-facing expectations in get_financial_metrics tests.
-            peg_tolerance_factor = (
-                3.0 if (include_dividend and include_marketcap) else 1.0
-            )
             valuation = _determine_valuation_status(
-                pe_v, info, pe_cheap, pe_expensive, peg_max * peg_tolerance_factor
+                pe_v, info, pe_cheap, pe_expensive, peg_max
             )
             trend = _determine_trend_status(
                 curr_p, sma200, sma50, rsi_for_trend, pe_v, kgv_max
             )
             optional = _get_optional_metrics(info, include_dividend, include_marketcap)
             w52 = _get_52w_metrics(info, curr_p)
+            analyst = _get_analyst_metrics(info, curr_p)
+
+            interim = {
+                "Price": curr_p,
+                "P/E (KGV)": pe_v,
+                "Valuation": valuation,
+                "Trend": trend,
+                "RSI": rsi_reported,
+                **w52,
+                **optional,
+                **analyst,
+            }
+            buy_score, opp_rating, strengths, risks = _calculate_buy_score(interim)
 
             result = {
                 "Original Ticker": original_ticker,
@@ -834,8 +1054,13 @@ def get_financial_metrics(ticker_tuple: tuple[str, str]) -> dict:
                 "Trend": trend,
                 "ATH/ATL": ath_atl,
                 "Valuation": valuation,
+                "Buy Score": buy_score,
+                "Opportunity Rating": opp_rating,
+                **analyst,
                 **w52,
                 **optional,
+                "Key Strengths": "; ".join(strengths),
+                "Key Risks": "; ".join(risks),
                 "Status": "OK",
             }
             return result
@@ -901,6 +1126,9 @@ def analyze_tickers(ticker_tuples_list: list[tuple[str, str]]) -> pd.DataFrame:
         "KGV": "P/E (KGV)",
         "PE": "P/E (KGV)",
         "P/E": "P/E (KGV)",
+        "Score": "Buy Score",
+        "BuyScore": "Buy Score",
+        "Upside": "Target Upside (%)",
         "Ticker": "Original Ticker",
         "Symbol": "Yahoo Symbol",
     }
@@ -915,6 +1143,9 @@ def analyze_tickers(ticker_tuples_list: list[tuple[str, str]]) -> pd.DataFrame:
             "SMA50",
             "RSI",
             "P/E (KGV)",
+            "Buy Score",
+            "Target Price",
+            "Target Upside (%)",
             "Dividend Yield (%)",
             "52W High (%)",
             "52W Low (%)",

@@ -48,6 +48,8 @@ def get_analysis_for_ticker(ticker_tuple: tuple[str, str]) -> str:
     # Convert to a readable string for the agent
     summary = f"Metrics for {result.get('Company')} ({result.get('Yahoo Symbol')}):\n"
     summary += f"- Price: {result.get('Price')} {result.get('Currency', '')}\n"
+    summary += f"- Buy Score: {result.get('Buy Score')}/100 ({result.get('Opportunity Rating')})\n"
+    summary += f"- Target Upside: {result.get('Target Upside (%)')}%\n"
     summary += f"- Trend: {result.get('Trend')}\n"
     summary += f"- Valuation: {result.get('Valuation')}\n"
     summary += f"- RSI: {result.get('RSI')}\n"
@@ -117,6 +119,6 @@ def run_bulk_analysis(portfolio_name: str) -> str:
     for _, row in df.iterrows():
         lines.append(
             f"- {row.get('Company')} ({row.get('Yahoo Symbol')}): Price={row.get('Price')}, "
-            f"Trend={row.get('Trend')}, Valuation={row.get('Valuation')}"
+            f"Buy Score={row.get('Buy Score')}/100, Trend={row.get('Trend')}, Valuation={row.get('Valuation')}"
         )
     return "\n".join(lines)

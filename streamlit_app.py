@@ -150,6 +150,14 @@ VALUATION_COLORS = {
     "Very Expensive (PEG)": "background-color: #b71c1c; color: white",
 }
 
+OPPORTUNITY_COLORS = {
+    "Top Opportunity": "background-color: #1b5e20; color: white; font-weight: bold;",
+    "Good Opportunity": "background-color: #388e3c; color: white;",
+    "Watchlist": "background-color: #f57c00; color: white;",
+    "Value Trap Risk": "background-color: #b71c1c; color: white; font-weight: bold;",
+    "Unfavorable": "background-color: #d32f2f; color: white;",
+}
+
 
 def style_dataframe(df: pd.DataFrame):
     def color_trend(val):
@@ -157,6 +165,37 @@ def style_dataframe(df: pd.DataFrame):
 
     def color_valuation(val):
         return VALUATION_COLORS.get(str(val), "")
+
+    def color_opportunity(val):
+        return OPPORTUNITY_COLORS.get(str(val), "")
+
+    def color_buy_score(val):
+        try:
+            v = float(val)
+            if v >= 75:
+                return "background-color: #1b5e20; color: white; font-weight: bold;"
+            elif v >= 60:
+                return "background-color: #388e3c; color: white; font-weight: bold;"
+            elif v >= 40:
+                return "background-color: #757575; color: white;"
+            else:
+                return "background-color: #c62828; color: white;"
+        except (TypeError, ValueError):
+            pass
+        return ""
+
+    def color_target_upside(val):
+        try:
+            v = float(val)
+            if v >= 25.0:
+                return "color: #4caf50; font-weight: bold;"
+            elif v > 0.0:
+                return "color: #8bc34a;"
+            elif v < 0.0:
+                return "color: #f44336;"
+        except (TypeError, ValueError):
+            pass
+        return ""
 
     def color_rsi(val):
         try:
@@ -200,6 +239,12 @@ def style_dataframe(df: pd.DataFrame):
         return ""
 
     styler = df.style
+    if "Buy Score" in df.columns:
+        styler = styler.map(color_buy_score, subset=["Buy Score"])
+    if "Opportunity Rating" in df.columns:
+        styler = styler.map(color_opportunity, subset=["Opportunity Rating"])
+    if "Target Upside (%)" in df.columns:
+        styler = styler.map(color_target_upside, subset=["Target Upside (%)"])
     if "Trend" in df.columns:
         styler = styler.map(color_trend, subset=["Trend"])
     if "Valuation" in df.columns:
@@ -274,12 +319,16 @@ def build_price_chart(yahoo_symbol: str, company_name: str, period: str) -> go.F
             col=1,
         )
 
-    # RSI
+    # RSI (Wilder's Exponential Smoothing)
     delta = hist["Close"].diff()
-    gain = delta.clip(lower=0).rolling(14).mean()
-    loss = (-delta.clip(upper=0)).rolling(14).mean()
-    rs = gain / loss.replace(0, float("nan"))
-    rsi_series = 100 - (100 / (1 + rs))
+    gain = delta.clip(lower=0)
+    loss = -delta.clip(upper=0)
+    avg_gain = gain.ewm(alpha=1.0 / 14, min_periods=14, adjust=False).mean()
+    avg_loss = loss.ewm(alpha=1.0 / 14, min_periods=14, adjust=False).mean()
+    rs = avg_gain / avg_loss
+    rsi_series = 100.0 - (100.0 / (1.0 + rs))
+    rsi_series = rsi_series.where(avg_loss != 0, 100.0)
+    rsi_series = rsi_series.where(avg_gain != 0, 0.0)
 
     fig.add_trace(
         go.Scatter(
@@ -596,6 +645,73 @@ def render_build_tab():
                 st.session_state.import_preview = None
                 st.rerun()
 
+    # ── Curated Market Baskets ──
+    with st.container(border=True):
+        st.subheader(":material/explore: Curated Market Baskets")
+        st.caption(
+            "Quickly load vetted screening universes into your watchlist to scan for buying opportunities."
+        )
+
+        curated_baskets = {
+            "👑 Royalty & Streaming": [
+                ("FNV", "FNV", "Franco-Nevada"),
+                ("WPM", "WPM", "Wheaton Precious Metals"),
+                ("RGLD", "RGLD", "Royal Gold"),
+                ("TFPM", "TFPM", "Triple Flag Precious"),
+                ("SAND", "SAND", "Sandstorm Gold"),
+                ("VOXR", "VOXR", "Vox Royalties"),
+                ("TSX:OR", "OR.TO", "Osisko Gold Royalties"),
+                ("TSX:MTA", "MTA.TO", "Metalla Royalty"),
+            ],
+            "🛡️ Dividend Aristocrats": [
+                ("JNJ", "JNJ", "Johnson & Johnson"),
+                ("PG", "PG", "Procter & Gamble"),
+                ("PEP", "PEP", "PepsiCo"),
+                ("KO", "KO", "Coca-Cola"),
+                ("ABBV", "ABBV", "AbbVie"),
+                ("MCD", "MCD", "McDonald's"),
+                ("CAT", "CAT", "Caterpillar"),
+                ("CVX", "CVX", "Chevron"),
+            ],
+            "🚀 Global Quality Leaders": [
+                ("MSFT", "MSFT", "Microsoft"),
+                ("AAPL", "AAPL", "Apple"),
+                ("GOOGL", "GOOGL", "Alphabet"),
+                ("NVDA", "NVDA", "NVIDIA"),
+                ("ASML", "ASML", "ASML Holding"),
+                ("ETR:SAP", "SAP.DE", "SAP SE"),
+                ("TSM", "TSM", "TSMC"),
+            ],
+            "💎 European Stalwarts": [
+                ("ETR:SAP", "SAP.DE", "SAP"),
+                ("ETR:ALV", "ALV.DE", "Allianz"),
+                ("ETR:SIE", "SIE.DE", "Siemens"),
+                ("EPA:MC", "MC.PA", "LVMH"),
+                ("EPA:OR", "OR.PA", "L'Oréal"),
+                ("AMS:ASML", "ASML.AS", "ASML"),
+                ("LSE:SHEL", "SHEL.L", "Shell"),
+                ("LSE:AZN", "AZN.L", "AstraZeneca"),
+            ],
+        }
+
+        b_cols = st.columns(len(curated_baskets))
+        for idx, (b_name, b_tickers) in enumerate(curated_baskets.items()):
+            with b_cols[idx]:
+                st.markdown(f"**{b_name}**")
+                st.caption(f"{len(b_tickers)} stocks")
+                if st.button(
+                    ":material/add_circle: Add Basket",
+                    key=f"add_basket_{idx}",
+                    width="stretch",
+                ):
+                    added = 0
+                    for orig, y_sym, name in b_tickers:
+                        if pm.add_ticker(portfolio_name, orig, y_sym, name):
+                            added += 1
+                    st.session_state.analysis_results = None
+                    st.success(f"Added {added} stocks from {b_name}!")
+                    st.rerun()
+
     # ── Current portfolio list ──
     with st.container(border=True):
         st.subheader(
@@ -736,12 +852,18 @@ def render_analysis_tab():
     failed_df = df[df["Status"] != "OK"].copy()
 
     if not success_df.empty:
-        st.subheader(f":material/check_circle: Results — {len(success_df)} stocks loaded")
+        st.subheader(
+            f":material/check_circle: Results — {len(success_df)} stocks loaded"
+        )
 
         display_cols = [
             "Company",
             "Yahoo Symbol",
             "Business Model",
+            "Buy Score",
+            "Opportunity Rating",
+            "Target Upside (%)",
+            "Recommendation",
             "Price",
             "Currency",
             "Price (EUR)",
@@ -760,7 +882,7 @@ def render_analysis_tab():
             "Beta",
             "Sector",
         ]
-        optional_cols = ["Dividend Yield (%)", "Market Cap"]
+        optional_cols = ["Dividend Yield (%)", "Market Cap", "Target Price"]
         display_cols += [c for c in optional_cols if c in success_df.columns]
         existing_cols = [c for c in display_cols if c in success_df.columns]
 
@@ -810,33 +932,155 @@ def render_analysis_tab():
                                 | (view_df["Sector"] == "N/A")
                             ]
 
-        # Filter recommended buys: Valuation contains "Cheap" (case-insensitive) independent of trend
-        is_cheap = (
-            view_df["Valuation"].astype(str).str.contains("Cheap", case=False, na=False)
-        )
-        recommended_df = view_df[is_cheap].copy()
+        # ── Smart Buying Opportunities Filter ──
+        has_score = "Buy Score" in view_df.columns
+        if has_score:
+            score_series = pd.to_numeric(view_df["Buy Score"], errors="coerce").fillna(
+                0
+            )
+            is_opp = (score_series >= 60) | (
+                view_df["Valuation"]
+                .astype(str)
+                .str.contains("Cheap", case=False, na=False)
+                & (view_df.get("Opportunity Rating", "") != "Value Trap Risk")
+            )
+        else:
+            is_opp = (
+                view_df["Valuation"]
+                .astype(str)
+                .str.contains("Cheap", case=False, na=False)
+            )
+
+        recommended_df = view_df[is_opp].copy()
 
         if not recommended_df.empty:
-            # Sort by KGV if available, else by Market Cap if available
-            if "P/E (KGV)" in recommended_df.columns:
-                # Sort by positive KGV first, then by P/E value ascending
+            if has_score:
+                recommended_df = recommended_df.sort_values(
+                    by="Buy Score", ascending=False, na_position="last"
+                )
+            elif "P/E (KGV)" in recommended_df.columns:
                 recommended_df["kvg_group"] = recommended_df["P/E (KGV)"].apply(
                     lambda x: 1 if pd.notna(x) and x <= 0 else 0
                 )
                 recommended_df = recommended_df.sort_values(
                     by=["kvg_group", "P/E (KGV)"], ascending=[True, True]
                 ).drop(columns=["kvg_group"])
-            elif "Market Cap" in recommended_df.columns:
-                recommended_df = recommended_df.sort_values(
-                    by="Market Cap", ascending=True
-                )
 
             st.subheader(":material/local_fire_department: Buying Opportunities")
             st.caption(
-                "Stocks in your portfolio with a **Cheap** or **Very Cheap** valuation."
+                "Ranked by **Composite Buy Score (0–100)** incorporating valuation, trend momentum, balance sheet health, and analyst target upside."
             )
-            rec_styled = style_dataframe(recommended_df[existing_cols])
-            st.dataframe(rec_styled, width="stretch", hide_index=True)
+
+            # Strategy view selection
+            opp_views = [
+                "All Opportunities",
+                "Top Confluence (Score ≥ 75)",
+                "High Upside (> 20%)",
+                "Value Bargains (P/E < 15)",
+            ]
+            if (
+                "Opportunity Rating" in view_df.columns
+                and (view_df["Opportunity Rating"] == "Value Trap Risk").any()
+            ):
+                opp_views.append("⚠️ Value Trap Warnings")
+
+            selected_opp_view = st.pills(
+                "Filter Opportunities:",
+                options=opp_views,
+                default="All Opportunities",
+                label_visibility="collapsed",
+            )
+
+            display_rec_df = recommended_df.copy()
+            if (
+                selected_opp_view == "Top Confluence (Score ≥ 75)"
+                and "Buy Score" in display_rec_df.columns
+            ):
+                display_rec_df = display_rec_df[
+                    pd.to_numeric(display_rec_df["Buy Score"], errors="coerce") >= 75
+                ]
+            elif (
+                selected_opp_view == "High Upside (> 20%)"
+                and "Target Upside (%)" in display_rec_df.columns
+            ):
+                display_rec_df = display_rec_df[
+                    pd.to_numeric(display_rec_df["Target Upside (%)"], errors="coerce")
+                    >= 20.0
+                ]
+            elif (
+                selected_opp_view == "Value Bargains (P/E < 15)"
+                and "P/E (KGV)" in display_rec_df.columns
+            ):
+                pe_nums = pd.to_numeric(display_rec_df["P/E (KGV)"], errors="coerce")
+                display_rec_df = display_rec_df[(pe_nums > 0) & (pe_nums <= 15.0)]
+            elif selected_opp_view == "⚠️ Value Trap Warnings":
+                display_rec_df = view_df[
+                    view_df["Opportunity Rating"] == "Value Trap Risk"
+                ].copy()
+
+            if not display_rec_df.empty:
+                rec_styled = style_dataframe(display_rec_df[existing_cols])
+                st.dataframe(rec_styled, width="stretch", hide_index=True)
+
+                # Opportunity Dossier / Deep Dive expander
+                if (
+                    "Key Strengths" in display_rec_df.columns
+                    or "Key Risks" in display_rec_df.columns
+                ):
+                    with st.expander(
+                        ":material/insights: Opportunity Dossiers & Risk Analysis",
+                        expanded=False,
+                    ):
+                        for _, row in display_rec_df.head(6).iterrows():
+                            company_label = f"**{row.get('Company')}** (`{row.get('Yahoo Symbol')}`)"
+                            rating_label = row.get("Opportunity Rating", "N/A")
+                            score_val = row.get("Buy Score", "N/A")
+                            st.markdown(
+                                f"#### {company_label} — Score: **{score_val}/100** ({rating_label})"
+                            )
+
+                            col_m1, col_m2, col_m3, col_m4 = st.columns(4)
+                            col_m1.metric(
+                                "Current Price",
+                                f"{row.get('Price')} {row.get('Currency', '')}",
+                            )
+                            upside_val = row.get("Target Upside (%)")
+                            col_m2.metric(
+                                "Target Upside",
+                                (f"{upside_val}%" if pd.notna(upside_val) else "N/A"),
+                            )
+                            col_m3.metric("Valuation", str(row.get("Valuation", "N/A")))
+                            col_m4.metric("Trend", str(row.get("Trend", "N/A")))
+
+                            strengths_text = str(row.get("Key Strengths", "")).strip()
+                            risks_text = str(row.get("Key Risks", "")).strip()
+
+                            d_col1, d_col2 = st.columns(2)
+                            with d_col1:
+                                st.markdown(
+                                    "**:material/check_circle: Bullish Catalysts & Strengths:**"
+                                )
+                                if strengths_text:
+                                    for item in strengths_text.split("; "):
+                                        if item:
+                                            st.markdown(f"- {item}")
+                                else:
+                                    st.caption("None flagged.")
+                            with d_col2:
+                                st.markdown(
+                                    "**:material/warning: Risk Factors & Headwinds:**"
+                                )
+                                if risks_text:
+                                    for item in risks_text.split("; "):
+                                        if item:
+                                            st.markdown(f"- {item}")
+                                else:
+                                    st.caption("No major red flags identified.")
+                            st.divider()
+            else:
+                st.info(
+                    f"No stocks currently match the filter: **{selected_opp_view}**."
+                )
 
         st.subheader(":material/table_chart: Full Portfolio Analysis")
         styled = style_dataframe(view_df[existing_cols])

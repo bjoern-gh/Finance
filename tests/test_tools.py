@@ -82,15 +82,11 @@ def test_tools_add_and_remove_ticker(tmp_path, monkeypatch):
     monkeypatch.setattr(pm, "PORTFOLIOS_DIR", tmp_path)
     pm.save_portfolio("PortfolioA", [])
 
-    add_res = tools.add_ticker_to_portfolio(
-        "PortfolioA", "AAPL", "AAPL", "Apple Inc."
-    )
+    add_res = tools.add_ticker_to_portfolio("PortfolioA", "AAPL", "AAPL", "Apple Inc.")
     assert "Successfully added" in add_res
 
     # Try duplicate
-    add_dup = tools.add_ticker_to_portfolio(
-        "PortfolioA", "AAPL", "AAPL", "Apple Inc."
-    )
+    add_dup = tools.add_ticker_to_portfolio("PortfolioA", "AAPL", "AAPL", "Apple Inc.")
     assert "Failed to add" in add_dup
 
     # Remove
@@ -112,3 +108,52 @@ def test_tools_get_market_search():
         res = tools.get_market_search("Nvidia")
         assert "NVIDIA Corporation" in res
         assert "NVDA" in res
+
+
+def test_tools_get_analysis_for_ticker():
+    mock_metric = {
+        "Company": "Apple Inc.",
+        "Yahoo Symbol": "AAPL",
+        "Price": 150.0,
+        "Currency": "USD",
+        "Buy Score": 85,
+        "Opportunity Rating": "Top Opportunity",
+        "Target Upside (%)": 25.0,
+        "Trend": "STRONG BUY",
+        "Valuation": "Fair",
+        "RSI": 50.0,
+        "SMA200": 140.0,
+        "Business Model": "Operating Company",
+        "Status": "OK",
+    }
+    with patch("tools.get_financial_metrics", return_value=mock_metric):
+        res = tools.get_analysis_for_ticker(("AAPL", "AAPL"))
+        assert "Apple Inc." in res
+        assert "Buy Score: 85/100" in res
+        assert "Target Upside: 25.0%" in res
+
+
+def test_tools_run_bulk_analysis(tmp_path, monkeypatch):
+    import pandas as pd
+
+    monkeypatch.setattr(pm, "PORTFOLIOS_DIR", tmp_path)
+    pm.save_portfolio(
+        "Tech",
+        [{"original": "AAPL", "yahoo": "AAPL", "display_name": "Apple"}],
+    )
+    mock_df = pd.DataFrame(
+        [
+            {
+                "Company": "Apple Inc.",
+                "Yahoo Symbol": "AAPL",
+                "Price": 150.0,
+                "Buy Score": 85,
+                "Trend": "STRONG BUY",
+                "Valuation": "Fair",
+            }
+        ]
+    )
+    with patch("tools.analyze_tickers", return_value=mock_df):
+        res = tools.run_bulk_analysis("Tech")
+        assert "Apple Inc." in res
+        assert "Buy Score=85/100" in res
