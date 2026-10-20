@@ -158,6 +158,81 @@ OPPORTUNITY_COLORS = {
     "Unfavorable": "background-color: #d32f2f; color: white;",
 }
 
+KNOWN_FLOAT_COLUMNS = {
+    "Price",
+    "Price (EUR)",
+    "SMA200",
+    "SMA50",
+    "RSI",
+    "P/E (KGV)",
+    "52W High (%)",
+    "52W Low (%)",
+    "D/E Ratio",
+    "Revenue Growth (%)",
+    "Profit Margin (%)",
+    "Beta",
+    "Dividend Yield (%)",
+    "Target Price",
+}
+
+
+def format_2_decimals(val) -> str:
+    """Format numeric value to 2 digits after the decimal separator (e.g. 1.20 not 1.200000)."""
+    if pd.isna(val) or val is None or val in ("N/A", ""):
+        return "N/A"
+    try:
+        return f"{float(val):.2f}"
+    except (ValueError, TypeError):
+        return str(val)
+
+
+def format_target_upside(val) -> str:
+    """Format Target Upside as full percentage without separator (e.g. 16% or -3%)."""
+    if pd.isna(val) or val is None or val in ("N/A", ""):
+        return "-"
+    try:
+        return f"{float(val):.0f}%"
+    except (ValueError, TypeError):
+        return str(val)
+
+
+def get_column_config(df: pd.DataFrame) -> dict:
+    """
+    Generate automatic default column_config for Streamlit dataframe:
+    - Target Upside: full percentage without separator (format='%.0f%%')
+    - Floating point values: 2 digits after separator (format='%.2f')
+    - Integer columns: integer format (format='%.0f')
+    """
+    config = {}
+    for col in df.columns:
+        col_lower = col.lower()
+        if "target upside" in col_lower or col == "Upside":
+            config[col] = st.column_config.NumberColumn(format="%.0f%%")
+            continue
+
+        if col in KNOWN_FLOAT_COLUMNS:
+            config[col] = st.column_config.NumberColumn(format="%.2f")
+            continue
+
+        if col == "Buy Score":
+            config[col] = st.column_config.NumberColumn(format="%.0f")
+            continue
+
+        # Automatic detection for any other numeric column
+        s = df[col]
+        non_null = s[s.notna() & (s != "N/A") & (s != "")]
+        if non_null.empty:
+            continue
+
+        converted = pd.to_numeric(non_null, errors="coerce")
+        if converted.notna().all():
+            if (converted % 1 == 0).all():
+                config[col] = st.column_config.NumberColumn(format="%.0f")
+            else:
+                config[col] = st.column_config.NumberColumn(format="%.2f")
+
+    return config
+
 
 def style_dataframe(df: pd.DataFrame):
     def color_trend(val):
@@ -257,6 +332,19 @@ def style_dataframe(df: pd.DataFrame):
         styler = styler.map(color_52w_low, subset=["52W Low (%)"])
     if "Business Model" in df.columns:
         styler = styler.map(color_business_model, subset=["Business Model"])
+
+    # Automatic formatting as default:
+    # Shorten values to 2 digits after separator (e.g. 1.20 not 1.200000)
+    styler = styler.format(precision=2, na_rep="-")
+    # For target upside: full percentage without separator is enough
+    upside_cols = [
+        c for c in df.columns if "target upside" in c.lower() or c == "Upside"
+    ]
+    if upside_cols:
+        styler = styler.format(
+            formatter=format_target_upside, subset=upside_cols, na_rep="-"
+        )
+
     return styler
 
 
@@ -1020,7 +1108,12 @@ def render_analysis_tab():
 
             if not display_rec_df.empty:
                 rec_styled = style_dataframe(display_rec_df[existing_cols])
-                st.dataframe(rec_styled, width="stretch", hide_index=True)
+                st.dataframe(
+                    rec_styled,
+                    column_config=get_column_config(display_rec_df[existing_cols]),
+                    width="stretch",
+                    hide_index=True,
+                )
 
                 # Opportunity Dossier / Deep Dive expander
                 if (
@@ -1040,14 +1133,20 @@ def render_analysis_tab():
                             )
 
                             col_m1, col_m2, col_m3, col_m4 = st.columns(4)
+                            price_formatted = format_2_decimals(row.get("Price"))
                             col_m1.metric(
                                 "Current Price",
-                                f"{row.get('Price')} {row.get('Currency', '')}",
+                                f"{price_formatted} {row.get('Currency', '')}".strip(),
                             )
-                            upside_val = row.get("Target Upside (%)")
+                            upside_raw = row.get("Target Upside (%)")
+                            upside_formatted = (
+                                format_target_upside(upside_raw)
+                                if pd.notna(upside_raw) and upside_raw not in ("N/A", "")
+                                else "N/A"
+                            )
                             col_m2.metric(
                                 "Target Upside",
-                                (f"{upside_val}%" if pd.notna(upside_val) else "N/A"),
+                                upside_formatted,
                             )
                             col_m3.metric("Valuation", str(row.get("Valuation", "N/A")))
                             col_m4.metric("Trend", str(row.get("Trend", "N/A")))
@@ -1084,7 +1183,12 @@ def render_analysis_tab():
 
         st.subheader(":material/table_chart: Full Portfolio Analysis")
         styled = style_dataframe(view_df[existing_cols])
-        st.dataframe(styled, width="stretch", hide_index=True)
+        st.dataframe(
+            styled,
+            column_config=get_column_config(view_df[existing_cols]),
+            width="stretch",
+            hide_index=True,
+        )
 
         # ── Download buttons ──
         dl1, dl2, _ = st.columns([1, 1, 4])
@@ -1162,12 +1266,14 @@ def render_charts_tab():
         if not row.empty:
             r = row.iloc[0]
             m1, m2, m3, m4, m5, m6 = st.columns(6)
-            m1.metric("Price", f"{r.get('Price', 'N/A')}")
-            m2.metric("RSI", f"{r.get('RSI', 'N/A')}")
-            m3.metric("P/E", f"{r.get('P/E (KGV)', 'N/A')}")
-            m4.metric("Trend", r.get("Trend", "N/A"))
-            m5.metric("52W High", f"{r.get('52W High (%)', 'N/A')}%")
-            m6.metric("52W Low", f"{r.get('52W Low (%)', 'N/A')}%")
+            m1.metric("Price", format_2_decimals(r.get("Price")))
+            m2.metric("RSI", format_2_decimals(r.get("RSI")))
+            m3.metric("P/E", format_2_decimals(r.get("P/E (KGV)")))
+            m4.metric("Trend", str(r.get("Trend", "N/A")))
+            w52_h = format_2_decimals(r.get("52W High (%)"))
+            m5.metric("52W High", f"{w52_h}%" if w52_h != "N/A" else "N/A")
+            w52_l = format_2_decimals(r.get("52W Low (%)"))
+            m6.metric("52W Low", f"{w52_l}%" if w52_l != "N/A" else "N/A")
 
     with st.spinner("Loading chart..."):
         fig = build_price_chart(yahoo_symbol, company_name, period)

@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.0] - 2026-10-20
+
+### Added
+- **Automatic UI Data Representation & Number Formatting**:
+  - Implemented automatic default number formatting in Streamlit pandas dataframes (`st.dataframe`):
+    - Float and price metrics are automatically shortened to 2 digits after the decimal separator (`%.2f`, e.g., `1.20` instead of `1.200000`).
+    - Target Upside is represented as a whole integer percentage without decimal separator (`%.0f%%`, e.g., `16%` instead of `15.60%` or `15.600000`).
+    - Integer metrics (like Buy Score) retain clean integer display (`%.0f`).
+  - Added centralized column configuration generator (`get_column_config`) integrating Streamlit's native `st.column_config.NumberColumn`.
+  - Added dedicated UI unit test suite in `tests/test_ui_formatting.py` covering formatting helpers, column configurations, Styler output, and null handling (132 total passing tests).
+
+### Changed
+- **Consistent Metric Card Formatting**:
+  - Aligned Opportunity Dossiers and Chart metrics in Streamlit (`Current Price`, `Target Upside`, `RSI`, `P/E`, `52W High`, `52W Low`) with 2-decimal and full-percentage formatting.
+  - Preserved raw underlying data precision in calculations, sorting, and Excel/CSV exports while enforcing clean UI formatting.
+
+---
+
 ## [1.4.0] - 2026-09-30
 
 ### Added

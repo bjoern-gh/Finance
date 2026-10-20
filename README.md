@@ -14,6 +14,7 @@ A stock analysis application that fetches live data from Yahoo Finance, calculat
 - **Trend signals** — STRONG BUY / BULLISH / OVERBOUGHT / HOLD / OVERSOLD / BEARISH, based on dual SMA + RSI + P/E
 - **EUR conversion** — prices in non-EUR currencies (USD, GBp, CAD, etc.) are auto-converted using live FX rates
 - **Color-coded table** — trend, valuation, RSI, and 52W distance are highlighted for quick scanning
+- **Optimized data representation** — automatic default formatting in the UI shortens decimal metrics to 2 digits after the separator (e.g. `1.20` instead of `1.200000`), while displaying Target Upside as a clean whole integer percentage without decimal separator
 - **Interactive charts** — candlestick price chart with SMA200, SMA50, and RSI subplot per stock
 - **Export** — download results as CSV or Excel
 - **REST API** — `/analyze` endpoint for programmatic access
@@ -329,7 +330,13 @@ Finance/
 ├── docker-compose.yml     # Orchestrates Streamlit + API + volume
 ├── .dockerignore
 ├── tests/
-│   └── test_financial_analyzer.py
+│   ├── test_financial_analyzer.py
+│   ├── test_portfolio_manager.py
+│   ├── test_analyze_tickers.py
+│   ├── test_tools.py
+│   ├── test_agent.py
+│   ├── test_api.py
+│   └── test_ui_formatting.py
 └── portfolios/            # Created at runtime, gitignored
     └── <name>.json        # One file per portfolio
 ```
