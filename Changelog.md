@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.0] - 2026-10-27
+
+### Added
+- **Dependency Enhancements**:
+  - Added `watchdog` to application dependencies in `pyproject.toml` for high-performance filesystem monitoring and eliminating Streamlit startup warnings on macOS.
+  - Formally included `openai` dependency in `pyproject.toml` supporting `agent.py` financial assistant workflows.
+
+### Changed
+- **Modular Logging Architecture**:
+  - Migrated from direct root `logging` calls (`logging.info`, `logging.warning`, `logging.error`) to dedicated module loggers (`logging.getLogger(__name__)`) across `agent.py`, `financial_analyzer.py`, `main.py`, and `streamlit_app.py`.
+  - Deduplicated the development authentication fallback warning in `streamlit_app.py` so it alerts only once per process rather than repeating on every rerun.
+
+### Fixed
+- **Third-Party Deprecation Warnings Suppression**:
+  - Filtered out `Pandas4Warning` and `DeprecationWarning` emitted by `yfinance` internal `inplace=True` operations on pandas >= 3.0/3.1, eliminating terminal warning noise during batch analysis and chart loading.
+- **Code Quality & Linter Compliance**:
+  - Resolved all 40 `ruff` rule violations across the codebase (`BLE001`, `LOG015`, `S110`, `SIM102`, `G201`, `TRY401`).
+  - Replaced broad blind exception handling with explicit error logging (`logger.exception` and `exc_info=True`) and narrowed UI file import exception boundaries.
+  - Simplified nested conditional branches in Streamlit UI action handlers.
+
+---
+
 ## [1.5.0] - 2026-10-20
 
 ### Added

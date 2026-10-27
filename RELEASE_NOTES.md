@@ -1,3 +1,38 @@
+# Release Notes — Version 1.6.0
+
+**Release Date:** October 27, 2026  
+**Build:** v1.6.0  
+**Test Suite:** 132 passing tests (`0.51s`)  
+**Code Quality:** 0 Ruff violations (Ruff 0.17+)  
+**Compatibility:** Python 3.11–3.13, Streamlit 1.31+, FastAPI 0.108+  
+
+---
+
+## Executive Summary
+
+Version 1.6.0 is a maintenance and stability release focused on code quality, clean logging, upstream warning mitigation, and dependency reliability. It eliminates all 40 `ruff` lint violations across the codebase, suppresses noisy internal `Pandas4Warning` deprecations originating from `yfinance` operations on pandas 3.1+, and improves Streamlit startup and auth logging.
+
+---
+
+## Key Highlights & Improvements
+
+### 1. Zero-Warning Clean Console Experience
+- **Upstream Deprecation Suppression**: Intercepted and filtered `Pandas4Warning` and `DeprecationWarning` triggered by `yfinance` internal `.sort_index(inplace=True)`, `.set_index(..., inplace=True)`, and `.drop(..., inplace=True)` methods on pandas 3.1+.
+- **Clean Streamlit CLI Startup**: Added `watchdog` to production dependencies in `pyproject.toml`, resolving macOS filesystem watcher warnings on `streamlit run`.
+- **Deduplicated Auth Notice**: Guarded the fallback development authentication warning so it alerts only once per process rather than repeating on every UI rerun.
+
+### 2. Full Linter Compliance & Code Quality
+- **Ruff Compliance**: Resolved all 40 lint violations across `agent.py`, `financial_analyzer.py`, `main.py`, and `streamlit_app.py`.
+- **Structured Module Logging (`LOG015`)**: Transitioned from global root logger calls (`logging.info`, `logging.warning`, etc.) to dedicated module loggers (`logging.getLogger(__name__)`).
+- **Robust Exception Handling (`BLE001`, `S110`, `G201`, `TRY401`)**: Replaced blind `except Exception:` blocks with structured exception logging (`logger.exception` and `exc_info=True`), and narrowed file-parsing exceptions in `streamlit_app.py`.
+- **Simplified Branch Logic (`SIM102`)**: Combined nested conditional checks in Streamlit action handlers into clean single-line `if ... and ...:` conditions.
+
+### 3. Dependency Alignment
+- Added `watchdog>=6.0.0` and `openai>=3.39.0` directly to `pyproject.toml` dependencies.
+- Updated `uv.lock` to reflect version 1.6.0.
+
+---
+
 # Release Notes — Version 1.5.0
 
 **Release Date:** October 20, 2026  

@@ -1,4 +1,4 @@
-# Financial Analysis App
+# Financial Analysis App (v1.6.0)
 
 A stock analysis application that fetches live data from Yahoo Finance, calculates key metrics, and lets you manage multiple watchlists/portfolios. Built with Streamlit (UI), FastAPI (REST API), and yfinance.
 
@@ -15,6 +15,7 @@ A stock analysis application that fetches live data from Yahoo Finance, calculat
 - **EUR conversion** — prices in non-EUR currencies (USD, GBp, CAD, etc.) are auto-converted using live FX rates
 - **Color-coded table** — trend, valuation, RSI, and 52W distance are highlighted for quick scanning
 - **Optimized data representation** — automatic default formatting in the UI shortens decimal metrics to 2 digits after the separator (e.g. `1.20` instead of `1.200000`), while displaying Target Upside as a clean whole integer percentage without decimal separator
+- **Clean logging & diagnostics** — built-in suppression of upstream third-party deprecation warnings (`yfinance` / `pandas`), structured logging, and full `ruff` lint compliance
 - **Interactive charts** — candlestick price chart with SMA200, SMA50, and RSI subplot per stock
 - **Export** — download results as CSV or Excel
 - **REST API** — `/analyze` endpoint for programmatic access
@@ -368,6 +369,7 @@ pytest
 black .           # Format
 ruff check .      # Lint
 ruff check . --fix  # Auto-fix lint issues
+```
 
 ## Contributing
 Your help is appreciated! If you find a bug or have a suggestion for improvement, please open an issue. To contribute code changes:
