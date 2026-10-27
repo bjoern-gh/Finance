@@ -1,9 +1,11 @@
 """Unit tests for FastAPI endpoints in api.py without requiring httpx."""
 
-import pytest
 from unittest.mock import patch
+
 import pandas as pd
-from api import read_root, search_tickers, analyze_financial_data
+import pytest
+
+from api import analyze_financial_data, read_root, search_tickers
 
 
 @pytest.mark.anyio

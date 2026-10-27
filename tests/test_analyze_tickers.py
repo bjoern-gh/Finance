@@ -1,7 +1,9 @@
 """Unit tests for analyze_tickers batch processing in financial_analyzer."""
 
 from unittest.mock import patch
+
 import pandas as pd
+
 from financial_analyzer import analyze_tickers
 
 
@@ -37,10 +39,13 @@ def test_analyze_tickers_sequential():
         },
     }
 
-    with patch(
-        "financial_analyzer.get_financial_metrics",
-        side_effect=lambda t: mock_metrics[t],
-    ), patch("financial_analyzer.config") as mock_cfg:
+    with (
+        patch(
+            "financial_analyzer.get_financial_metrics",
+            side_effect=lambda t: mock_metrics[t],
+        ),
+        patch("financial_analyzer.config") as mock_cfg,
+    ):
         mock_cfg.getint.return_value = 1  # 1 worker -> sequential path
         mock_cfg.get.return_value = "P/E (KGV)"
         mock_cfg.getboolean.return_value = True
@@ -82,11 +87,16 @@ def test_analyze_tickers_parallel():
         },
     }
 
-    with patch(
-        "financial_analyzer.get_financial_metrics",
-        side_effect=lambda t: mock_metrics[t],
-    ), patch("financial_analyzer.config") as mock_cfg:
-        mock_cfg.getint.return_value = 4  # 4 workers -> parallel ThreadPoolExecutor path
+    with (
+        patch(
+            "financial_analyzer.get_financial_metrics",
+            side_effect=lambda t: mock_metrics[t],
+        ),
+        patch("financial_analyzer.config") as mock_cfg,
+    ):
+        mock_cfg.getint.return_value = (
+            4  # 4 workers -> parallel ThreadPoolExecutor path
+        )
         # Sort ascending by KGV -> GOOG (20.0), AAPL (28.0), MSFT (32.0)
         mock_cfg.get.return_value = "KGV"
         mock_cfg.getboolean.return_value = True

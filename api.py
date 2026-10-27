@@ -1,7 +1,7 @@
-from fastapi import FastAPI, Query
-from typing import List, Optional
-import logging
 import configparser
+import logging
+
+from fastapi import FastAPI, Query
 
 from financial_analyzer import (
     analyze_tickers,
@@ -29,7 +29,7 @@ async def read_root():
     }
 
 
-@app.get("/search", response_model=List[dict])
+@app.get("/search", response_model=list[dict])
 async def search_tickers(
     q: str = Query(..., min_length=2, description="Company name or ticker query"),
 ):
@@ -39,9 +39,9 @@ async def search_tickers(
     return search_company(q)
 
 
-@app.get("/analyze", response_model=List[dict])
+@app.get("/analyze", response_model=list[dict])
 async def analyze_financial_data(
-    tickers: Optional[str] = Query(
+    tickers: str | None = Query(
         None,
         description=(
             "Comma-separated ticker symbols with optional exchange prefix "

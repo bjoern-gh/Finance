@@ -1,13 +1,14 @@
-import logging
 import json
-from typing import List, Dict, Any
+import logging
+from typing import Any
+
 from tools import (
-    list_portfolios,
-    get_analysis_for_ticker,
     add_ticker_to_portfolio,
-    remove_ticker_from_portfolio,
+    get_analysis_for_ticker,
     get_market_search,
     get_portfolio_info,
+    list_portfolios,
+    remove_ticker_from_portfolio,
     run_bulk_analysis,
 )
 
@@ -19,14 +20,14 @@ logger = logging.getLogger(__name__)
 class OpenAIClient:
     """Simple client for OpenAI-compatible APIs."""
 
-    def __init__(self, api_key: str, base_url: str = None):
+    def __init__(self, api_key: str, base_url: str | None = None):
         self.api_key = api_key
         self.base_url = base_url
         import openai
 
         self.client = openai.OpenAI(api_key=self.api_key, base_url=base_url)
 
-    def generate_response(self, prompt: str, tools: List[Dict]) -> Dict[str, Any]:
+    def generate_response(self, prompt: str, tools: list[dict]) -> dict[str, Any]:
         response = self.client.chat.completions.create(
             model="gpt-4o",
             messages=[
@@ -158,14 +159,12 @@ class FinancialAgent:
             },
         ]
 
-    def run(self, user_input: str, current_portfolio: str = None) -> str:
+    def run(self, user_input: str, current_portfolio: str | None = None) -> str:
         if not self.model_client:
             return "Error: No model client provided. Please configure an API key in the settings."
 
         # Prepare tools definition for OpenAI function calling
-        tools_def = [
-            {"type": t["type"], "function": t["function"]} for t in self.tools
-        ]
+        tools_def = [{"type": t["type"], "function": t["function"]} for t in self.tools]
         response = self.model_client.generate_response(user_input, tools_def)
 
         if hasattr(response, "tool_calls") and response.tool_calls:
@@ -189,6 +188,7 @@ class FinancialAgent:
                     result = fn(**fn_args)
                     results.append(str(result))
                 except Exception as e:
+                    logger.exception(f"Error calling {fn_name}")
                     results.append(f"Error calling {fn_name}: {e}")
 
             return "\n\n".join(results)

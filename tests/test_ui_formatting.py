@@ -1,12 +1,13 @@
 """Unit tests for UI data representation formatting in streamlit_app."""
 
 import pandas as pd
+
 from streamlit_app import (
+    KNOWN_FLOAT_COLUMNS,
     format_2_decimals,
     format_target_upside,
     get_column_config,
     style_dataframe,
-    KNOWN_FLOAT_COLUMNS,
 )
 
 

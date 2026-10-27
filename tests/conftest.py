@@ -4,8 +4,9 @@ import os
 
 os.environ["ARROW_DEFAULT_MEMORY_POOL"] = "system"
 import sys
-import pytest
 from unittest.mock import patch
+
+import pytest
 
 # Ensure the project root is in sys.path
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))

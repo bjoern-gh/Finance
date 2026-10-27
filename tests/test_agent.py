@@ -1,6 +1,7 @@
 """Unit tests for agent.py and FinancialAgent."""
 
 from unittest.mock import MagicMock
+
 from agent import FinancialAgent
 
 

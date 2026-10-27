@@ -1,7 +1,9 @@
 """Unit tests for portfolio_manager module."""
 
 import json
+
 import pytest
+
 import portfolio_manager as pm
 
 

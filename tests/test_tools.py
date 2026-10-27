@@ -1,6 +1,7 @@
 """Unit tests for tools and search_company modules."""
 
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
+
 import portfolio_manager as pm
 import tools
 from financial_analyzer import search_company

@@ -2,24 +2,29 @@ import os
 
 os.environ["ARROW_DEFAULT_MEMORY_POOL"] = "system"
 
+import configparser
 import hashlib
 import io
 import json
+import logging
 import re
+
 import pandas as pd
 import plotly.graph_objects as go
-from plotly.subplots import make_subplots
 import streamlit as st
-import configparser
-import logging
+from plotly.subplots import make_subplots
 
 import portfolio_manager as pm
 from financial_analyzer import (
     analyze_tickers,
-    parse_and_convert_tickers,
     get_price_history,
+    parse_and_convert_tickers,
+)
+from financial_analyzer import (
     search_company as search_company_backend,
 )
+
+logger = logging.getLogger(__name__)
 
 # ── Page config ──────────────────────────────────────────────────────────────
 st.set_page_config(layout="wide", page_title="Financial Analysis", page_icon="📈")
@@ -59,16 +64,15 @@ def _get_credentials() -> tuple[list[str], list[str]]:
                 ]
                 hashes = [h.strip() for h in hashes_raw.split(",") if h.strip()]
                 return usernames, hashes
-    except Exception:
-        # If config parsing fails, ignore and fall back to defaults
-        pass
+    except (configparser.Error, OSError) as e:
+        logger.debug(f"Failed to read auth config from config.ini: {e}")
 
     # 3) Fallback default account (local development only)
     # WARNING: These defaults are intentionally simple for local/dev use. Change them by setting
     # AUTH_USERNAME/AUTH_PASSWORD_HASH env vars or adding an [Auth] section to config.ini.
     default_user = "admin"
     default_pass = "admin"
-    logging.warning(
+    logger.warning(
         "No auth configured; using default credentials 'admin' / 'admin'. Change immediately for production."
     )
     return [default_user], [_hash(default_pass)]
@@ -93,21 +97,20 @@ def render_login():
         return True
 
     col = st.columns([1, 1.2, 1])[1]
-    with col:
-        with st.container(border=True):
-            st.title(":material/trending_up: Financial Analysis")
-            st.subheader("Sign in")
+    with col, st.container(border=True):
+        st.title(":material/trending_up: Financial Analysis")
+        st.subheader("Sign in")
 
-            username = st.text_input("Username", key="login_username")
-            password = st.text_input("Password", type="password", key="login_password")
+        username = st.text_input("Username", key="login_username")
+        password = st.text_input("Password", type="password", key="login_password")
 
-            if st.button("Sign in", type="primary", width="stretch"):
-                if check_password(username, password):
-                    st.session_state.authenticated = True
-                    st.session_state.auth_user = username
-                    st.rerun()
-                else:
-                    st.error("Invalid username or password.")
+        if st.button("Sign in", type="primary", width="stretch"):
+            if check_password(username, password):
+                st.session_state.authenticated = True
+                st.session_state.auth_user = username
+                st.rerun()
+            else:
+                st.error("Invalid username or password.")
 
     return False
 
@@ -388,7 +391,7 @@ def build_price_chart(yahoo_symbol: str, company_name: str, period: str) -> go.F
                 x=hist.index,
                 y=hist["SMA200"],
                 name="SMA 200",
-                line=dict(color="#ff9800", width=1.5),
+                line={"color": "#ff9800", "width": 1.5},
             ),
             row=1,
             col=1,
@@ -401,7 +404,7 @@ def build_price_chart(yahoo_symbol: str, company_name: str, period: str) -> go.F
                 x=hist.index,
                 y=hist["SMA50"],
                 name="SMA 50",
-                line=dict(color="#2196f3", width=1.5),
+                line={"color": "#2196f3", "width": 1.5},
             ),
             row=1,
             col=1,
@@ -423,7 +426,7 @@ def build_price_chart(yahoo_symbol: str, company_name: str, period: str) -> go.F
             x=hist.index,
             y=rsi_series,
             name="RSI",
-            line=dict(color="#9c27b0", width=1.5),
+            line={"color": "#9c27b0", "width": 1.5},
         ),
         row=2,
         col=1,
@@ -436,8 +439,8 @@ def build_price_chart(yahoo_symbol: str, company_name: str, period: str) -> go.F
         height=600,
         xaxis_rangeslider_visible=False,
         template="plotly_dark",
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-        margin=dict(l=0, r=0, t=40, b=0),
+        legend={"orientation": "h", "yanchor": "bottom", "y": 1.02, "xanchor": "right", "x": 1},
+        margin={"l": 0, "r": 0, "t": 40, "b": 0},
     )
     fig.update_yaxes(title_text="Price", row=1, col=1)
     fig.update_yaxes(title_text="RSI", row=2, col=1, range=[0, 100])
@@ -587,28 +590,26 @@ def render_sidebar():
 
     if st.session_state.creating_portfolio:
         new_name = st.sidebar.text_input("Portfolio name:", key="new_portfolio_name")
-        if st.sidebar.button("Create", key="confirm_create"):
-            if new_name.strip():
-                pm.save_portfolio(new_name.strip(), [])
-                st.session_state.current_portfolio = new_name.strip()
-                st.session_state.creating_portfolio = False
-                st.rerun()
+        if st.sidebar.button("Create", key="confirm_create") and new_name.strip():
+            pm.save_portfolio(new_name.strip(), [])
+            st.session_state.current_portfolio = new_name.strip()
+            st.session_state.creating_portfolio = False
+            st.rerun()
 
     if st.session_state.renaming_portfolio and st.session_state.current_portfolio:
         rename_to = st.sidebar.text_input(
             "New name:", value=st.session_state.current_portfolio, key="rename_input"
         )
-        if st.sidebar.button("Save name", key="confirm_rename"):
-            if (
-                rename_to.strip()
-                and rename_to.strip() != st.session_state.current_portfolio
-            ):
-                pm.rename_portfolio(
-                    st.session_state.current_portfolio, rename_to.strip()
-                )
-                st.session_state.current_portfolio = rename_to.strip()
-                st.session_state.renaming_portfolio = False
-                st.rerun()
+        if st.sidebar.button("Save name", key="confirm_rename") and (
+            rename_to.strip()
+            and rename_to.strip() != st.session_state.current_portfolio
+        ):
+            pm.rename_portfolio(
+                st.session_state.current_portfolio, rename_to.strip()
+            )
+            st.session_state.current_portfolio = rename_to.strip()
+            st.session_state.renaming_portfolio = False
+            st.rerun()
 
     if st.session_state.current_portfolio:
         st.sidebar.divider()
@@ -863,7 +864,7 @@ def render_build_tab():
                     else:
                         st.session_state.portfolio_import_preview = raw
                         st.rerun()
-                except Exception as e:
+                except (json.JSONDecodeError, UnicodeDecodeError, ValueError, AttributeError) as e:
                     st.error(f"Could not read file: {e}")
 
             if st.session_state.portfolio_import_preview:
@@ -886,14 +887,13 @@ def render_build_tab():
                     )
 
                 ci1, ci2 = st.columns(2)
-                if ci1.button(":material/check: Save", type="primary", width="stretch"):
-                    if import_name.strip():
-                        pm.save_portfolio(import_name.strip(), raw["tickers"])
-                        st.session_state.current_portfolio = import_name.strip()
-                        st.session_state.portfolio_import_preview = None
-                        st.session_state.analysis_results = None
-                        st.success(f"Portfolio '{import_name.strip()}' imported.")
-                        st.rerun()
+                if ci1.button(":material/check: Save", type="primary", width="stretch") and import_name.strip():
+                    pm.save_portfolio(import_name.strip(), raw["tickers"])
+                    st.session_state.current_portfolio = import_name.strip()
+                    st.session_state.portfolio_import_preview = None
+                    st.session_state.analysis_results = None
+                    st.success(f"Portfolio '{import_name.strip()}' imported.")
+                    st.rerun()
                 if ci2.button("Cancel", width="stretch"):
                     st.session_state.portfolio_import_preview = None
                     st.rerun()
@@ -1141,7 +1141,8 @@ def render_analysis_tab():
                             upside_raw = row.get("Target Upside (%)")
                             upside_formatted = (
                                 format_target_upside(upside_raw)
-                                if pd.notna(upside_raw) and upside_raw not in ("N/A", "")
+                                if pd.notna(upside_raw)
+                                and upside_raw not in ("N/A", "")
                                 else "N/A"
                             )
                             col_m2.metric(

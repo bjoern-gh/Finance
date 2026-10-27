@@ -1,12 +1,13 @@
-import yfinance as yf
-import pandas as pd
-import re
-import configparser
-import time
-import logging
-import threading
 import concurrent.futures
+import configparser
+import logging
+import re
+import threading
+import time
+
+import pandas as pd
 import requests
+import yfinance as yf
 from tqdm import tqdm
 
 # --- Logger setup ---
@@ -15,6 +16,7 @@ logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(message)s",
     handlers=[logging.StreamHandler()],
 )
+logger = logging.getLogger(__name__)
 
 # --- Load configuration ---
 config = configparser.ConfigParser()
@@ -71,10 +73,10 @@ def _get_eur_rate(currency: str) -> float:
             rate = float(hist["Close"].iloc[-1])
         else:
             rate = 1.0  # fallback: treat as 1:1
-            logging.warning(f"FX rate not found for {lookup}EUR=X, defaulting to 1.0")
+            logger.warning(f"FX rate not found for {lookup}EUR=X, defaulting to 1.0")
     except Exception as e:
         rate = 1.0
-        logging.warning(f"FX rate fetch failed for {lookup}: {e}")
+        logger.warning(f"FX rate fetch failed for {lookup}: {e}", exc_info=True)
 
     with _eur_rate_lock:
         _eur_rate_cache[lookup] = rate
@@ -103,7 +105,7 @@ EXCHANGE_MAP = {
 
 # Build the prefix pattern dynamically - match uppercase letters only, not lowercase
 _PREFIX_PATTERN = (
-    r"(?:" + "|".join(re.escape(p) for p in EXCHANGE_MAP.keys()) + r"):[A-Z0-9]+"
+    r"(?:" + "|".join(re.escape(p) for p in EXCHANGE_MAP) + r"):[A-Z0-9]+"
 )
 
 
@@ -115,7 +117,7 @@ def format_large_number(num):
     while abs(num) >= 1000:
         magnitude += 1
         num /= 1000.0
-    return "%.2f%s" % (num, ["", "K", "M", "B", "T"][magnitude])
+    return "{:.2f}{}".format(num, ["", "K", "M", "B", "T"][magnitude])
 
 
 def parse_and_convert_tickers(data_string: str) -> list[tuple[str, str]]:
@@ -127,7 +129,7 @@ def parse_and_convert_tickers(data_string: str) -> list[tuple[str, str]]:
     """
     converted = []
     # Use a prefix-scanning approach to correctly handle concatenated tickers
-    prefixes = "|".join(re.escape(p) for p in EXCHANGE_MAP.keys())
+    prefixes = "|".join(re.escape(p) for p in EXCHANGE_MAP)
     prefix_re = re.compile(r"(?:" + prefixes + r"):")
     prefix_matches = list(prefix_re.finditer(data_string))
     if not prefix_matches:
@@ -269,8 +271,9 @@ def _enrich_stock_info(
                     ):
                         enriched[key] = val
         except Exception as e:
-            logging.debug(
-                f"Primary symbol fallback fetch failed for {primary_symbol}: {e}"
+            logger.debug(
+                f"Primary symbol fallback fetch failed for {primary_symbol}: {e}",
+                exc_info=True,
             )
 
     return enriched
@@ -324,7 +327,10 @@ def _calculate_pe_ratio(
                 if mkt_cap and isinstance(mkt_cap, (int, float)) and ttm_net > 0:
                     return mkt_cap / ttm_net
         except Exception:
-            pass
+            logger.debug(
+                "Quarterly financial statement TTM calculation failed",
+                exc_info=True,
+            )
 
     return pd.NA
 
@@ -556,7 +562,7 @@ ROYALTY_KEYWORDS = [
 
 
 def determine_business_model(
-    original_ticker: str = "", yahoo_symbol: str = "", info: dict = None
+    original_ticker: str = "", yahoo_symbol: str = "", info: dict | None = None
 ) -> str:
     """
     Determine the business model:
@@ -629,8 +635,8 @@ def determine_business_model(
 
 def _get_optional_metrics(
     info: dict,
-    include_dividend: bool = None,
-    include_market_cap: bool = None,
+    include_dividend: bool | None = None,
+    include_market_cap: bool | None = None,
     original_ticker: str = "",
     yahoo_symbol: str = "",
 ) -> dict:
@@ -944,7 +950,7 @@ def get_financial_metrics(ticker_tuple: tuple[str, str]) -> dict:
         info = ticker_obj.info
         company_name = info.get("longName") or info.get("shortName", "N/A")
     except Exception as e:
-        logging.warning(f"[{original_ticker}] Info fetch failed: {e}")
+        logger.warning(f"[{original_ticker}] Info fetch failed: {e}", exc_info=True)
         return {**_empty, "Company": company_name, "Status": f"Info fetch failed: {e}"}
 
     # Read config values at call time so tests can patch `financial_analyzer.config`
@@ -992,7 +998,7 @@ def get_financial_metrics(ticker_tuple: tuple[str, str]) -> dict:
             hist_max = ticker_obj.history(period="max")
 
             if hist_short.empty or len(hist_short) < sma_period:
-                logging.warning(
+                logger.warning(
                     f"[{original_ticker}] Insufficient data (attempt {attempt + 1}/{retries_local})."
                 )
                 return {
@@ -1066,8 +1072,8 @@ def get_financial_metrics(ticker_tuple: tuple[str, str]) -> dict:
             return result
 
         except Exception as e:
-            logging.error(
-                f"[{original_ticker}] Error attempt {attempt + 1}/{retries_local}: {e}"
+            logger.exception(
+                f"[{original_ticker}] Error attempt {attempt + 1}/{retries_local}"
             )
             if attempt < retries_local - 1:
                 time.sleep(retry_delay_local)
@@ -1090,7 +1096,7 @@ def analyze_tickers(ticker_tuples_list: list[tuple[str, str]]) -> pd.DataFrame:
     Returns a sorted DataFrame with all metrics.
     """
     if not ticker_tuples_list:
-        logging.warning("No tickers provided.")
+        logger.warning("No tickers provided.")
         return pd.DataFrame()
 
     max_workers = config.getint("General", "max_workers", fallback=MAX_WORKERS)
@@ -1098,7 +1104,7 @@ def analyze_tickers(ticker_tuples_list: list[tuple[str, str]]) -> pd.DataFrame:
 
     if max_workers > 1 and num_tickers > 1:
         workers = min(max_workers, num_tickers)
-        logging.info(
+        logger.info(
             f"Analyzing {num_tickers} tickers in parallel ({workers} workers)."
         )
         with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
@@ -1110,7 +1116,7 @@ def analyze_tickers(ticker_tuples_list: list[tuple[str, str]]) -> pd.DataFrame:
                 )
             )
     else:
-        logging.info(f"Analyzing {num_tickers} tickers (sequential).")
+        logger.info(f"Analyzing {num_tickers} tickers (sequential).")
         results = []
         for ticker_tuple in tqdm(ticker_tuples_list, desc="Processing tickers"):
             res = get_financial_metrics(ticker_tuple)
@@ -1166,11 +1172,15 @@ def analyze_tickers(ticker_tuples_list: list[tuple[str, str]]) -> pd.DataFrame:
                 ),
             )
         except Exception:
+            logger.debug(
+                f"Custom sort failed for column '{sort_column}', falling back to default sort",
+                exc_info=True,
+            )
             df = df.sort_values(
                 by=sort_column, ascending=sort_ascending, na_position="last"
             )
     else:
-        logging.warning(f"Sort column '{sort_column}' not found.")
+        logger.warning(f"Sort column '{sort_column}' not found.")
 
     return df
 
@@ -1187,8 +1197,8 @@ def get_price_history(yahoo_symbol: str, period: str = "1y") -> pd.DataFrame:
             hist["SMA200"] = hist["Close"].rolling(window=200).mean()
             hist["SMA50"] = hist["Close"].rolling(window=50).mean()
         return hist
-    except Exception as e:
-        logging.error(f"History fetch failed for {yahoo_symbol}: {e}")
+    except Exception:
+        logger.exception(f"History fetch failed for {yahoo_symbol}")
         return pd.DataFrame()
 
 
@@ -1230,5 +1240,5 @@ def search_company(query: str) -> list[dict]:
                 )
         return results
     except Exception as e:
-        logging.debug(f"Company search failed for '{query}': {e}")
+        logger.debug(f"Company search failed for '{query}': {e}", exc_info=True)
         return []

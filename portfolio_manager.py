@@ -30,7 +30,9 @@ def _safe_path(name: str) -> Path:
 def list_portfolios() -> list[str]:
     """Return sorted list of portfolio names (without .json extension)."""
     _ensure_dir()
-    return sorted(f.stem for f in PORTFOLIOS_DIR.glob("*.json") if not f.name.startswith("."))
+    return sorted(
+        f.stem for f in PORTFOLIOS_DIR.glob("*.json") if not f.name.startswith(".")
+    )
 
 
 def portfolio_exists(name: str) -> bool:
@@ -65,7 +67,9 @@ def load_portfolio(name: str) -> dict[str, Any]:
         logger.warning(f"Portfolio '{name}' has invalid structure, resetting to empty.")
         return empty_result
     except (json.JSONDecodeError, OSError) as e:
-        logger.warning(f"Failed to read portfolio '{name}': {e}. Returning empty portfolio.")
+        logger.warning(
+            f"Failed to read portfolio '{name}': {e}. Returning empty portfolio."
+        )
         return empty_result
 
 
