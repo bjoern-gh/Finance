@@ -343,6 +343,18 @@ Finance/
 
 ---
 
+## 🛠️ Development Roadmap & Maintenance Plan
+
+This project uses modern Python dependency management (`pyproject.toml`, `uv.lock`) for guaranteed reproducibility.
+
+**Current Stability Baseline:**
+The codebase is stable and fully tested with Python versions **3.11 through 3.13**. This range is supported by current library releases (`yfinance`, `pandas`).
+
+**Future Maintenance Goal (Next Phase):**
+The next goal is to investigate and implement compatibility with Python 3.14/3.15, pending major library releases for `yfinance` and `pandas`. This ensures the application stays modern while maintaining production stability.
+
+---
+
 ## Running tests
 
 ```bash
