@@ -8,11 +8,23 @@ import io
 import json
 import logging
 import re
+import warnings
 
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 from plotly.subplots import make_subplots
+
+# Suppress third-party deprecation warnings (e.g. yfinance internal inplace calls with pandas >= 3.0)
+warnings.filterwarnings("ignore", category=DeprecationWarning, module="^yfinance")
+warnings.filterwarnings("ignore", category=FutureWarning, module="^yfinance")
+warnings.filterwarnings("ignore", message=".*inplace.*")
+try:
+    from pandas.errors import Pandas4Warning
+
+    warnings.filterwarnings("ignore", category=Pandas4Warning)
+except ImportError:
+    pass
 
 import portfolio_manager as pm
 from financial_analyzer import (
@@ -32,11 +44,15 @@ st.set_page_config(layout="wide", page_title="Financial Analysis", page_icon="�
 # ── Auth ──────────────────────────────────────────────────────────────────────
 
 
+_auth_warned = False
+
+
 def _get_credentials() -> tuple[list[str], list[str]]:
     """
     Return (usernames, password_hashes) from env vars, config.ini [Auth], or sensible defaults.
     Priority: ENV vars > config.ini > built-in default (admin / 'admin').
     """
+    global _auth_warned
     # 1) Environment variables (explicit override)
     usernames_raw = os.environ.get("AUTH_USERNAMES") or os.environ.get("AUTH_USERNAME")
     hashes_raw = os.environ.get("AUTH_PASSWORD_HASHES") or os.environ.get(
@@ -72,9 +88,11 @@ def _get_credentials() -> tuple[list[str], list[str]]:
     # AUTH_USERNAME/AUTH_PASSWORD_HASH env vars or adding an [Auth] section to config.ini.
     default_user = "admin"
     default_pass = "admin"
-    logger.warning(
-        "No auth configured; using default credentials 'admin' / 'admin'. Change immediately for production."
-    )
+    if not _auth_warned:
+        logger.warning(
+            "No auth configured; using default credentials 'admin' / 'admin'. Change immediately for production."
+        )
+        _auth_warned = True
     return [default_user], [_hash(default_pass)]
 
 
@@ -439,7 +457,13 @@ def build_price_chart(yahoo_symbol: str, company_name: str, period: str) -> go.F
         height=600,
         xaxis_rangeslider_visible=False,
         template="plotly_dark",
-        legend={"orientation": "h", "yanchor": "bottom", "y": 1.02, "xanchor": "right", "x": 1},
+        legend={
+            "orientation": "h",
+            "yanchor": "bottom",
+            "y": 1.02,
+            "xanchor": "right",
+            "x": 1,
+        },
         margin={"l": 0, "r": 0, "t": 40, "b": 0},
     )
     fig.update_yaxes(title_text="Price", row=1, col=1)
@@ -604,9 +628,7 @@ def render_sidebar():
             rename_to.strip()
             and rename_to.strip() != st.session_state.current_portfolio
         ):
-            pm.rename_portfolio(
-                st.session_state.current_portfolio, rename_to.strip()
-            )
+            pm.rename_portfolio(st.session_state.current_portfolio, rename_to.strip())
             st.session_state.current_portfolio = rename_to.strip()
             st.session_state.renaming_portfolio = False
             st.rerun()
@@ -864,7 +886,12 @@ def render_build_tab():
                     else:
                         st.session_state.portfolio_import_preview = raw
                         st.rerun()
-                except (json.JSONDecodeError, UnicodeDecodeError, ValueError, AttributeError) as e:
+                except (
+                    json.JSONDecodeError,
+                    UnicodeDecodeError,
+                    ValueError,
+                    AttributeError,
+                ) as e:
                     st.error(f"Could not read file: {e}")
 
             if st.session_state.portfolio_import_preview:
@@ -887,7 +914,10 @@ def render_build_tab():
                     )
 
                 ci1, ci2 = st.columns(2)
-                if ci1.button(":material/check: Save", type="primary", width="stretch") and import_name.strip():
+                if (
+                    ci1.button(":material/check: Save", type="primary", width="stretch")
+                    and import_name.strip()
+                ):
                     pm.save_portfolio(import_name.strip(), raw["tickers"])
                     st.session_state.current_portfolio = import_name.strip()
                     st.session_state.portfolio_import_preview = None

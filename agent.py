@@ -2,8 +2,9 @@ import json
 import logging
 from typing import Any
 
+# Assuming 'tools' contains the definitions for function_call objects.
+# These are likely protobuf/dataclasses that map to the API schema.
 from tools import (
-    add_ticker_to_portfolio,
     get_analysis_for_ticker,
     get_market_search,
     get_portfolio_info,
@@ -28,17 +29,33 @@ class OpenAIClient:
         self.client = openai.OpenAI(api_key=self.api_key, base_url=base_url)
 
     def generate_response(self, prompt: str, tools: list[dict]) -> dict[str, Any]:
+        """
+        Generates a response from OpenAI by executing the chat completion.
+
+        Args:
+            prompt: The user's natural language prompt.
+            tools: The full internal definitions of available functions (self.tools).
+
+        Returns:
+            The LLM's message response object.
+        """
+        # CRITICAL FIX: Map the verbose internal tool definitions (tools)
+        # into the minimal, API-compliant structure required by the OpenAI client.
+        tools_def = [{"type": t["type"], "function": t["function"]} for t in tools]
+
         response = self.client.chat.completions.create(
             model="gpt-4o",
             messages=[
                 {
                     "role": "system",
-                    "content": f"You are a financial assistant. Tools: {json.dumps(tools)}",
+                    # Including the full tools definition in system prompt for context.
+                    "content": f"You are a financial assistant. Available Tools: {json.dumps(tools)}",
                     "name": "system",
                 },
                 {"role": "user", "content": prompt},
             ],
-            tools=tools,
+            # CORRECTED: Pass the minimal API-compliant structure here.
+            tools=tools_def,
             tool_choice="auto",
         )
         return response.choices[0].message
@@ -50,6 +67,7 @@ class FinancialAgent:
         Initialize the agent with a model client.
         """
         self.model_client = model_client
+        # self.tools holds the full, detailed definitions used internally by our application.
         self.tools = [
             {
                 "type": "function",
@@ -91,29 +109,6 @@ class FinancialAgent:
                     },
                 },
                 "function_call": get_analysis_for_ticker,
-            },
-            {
-                "type": "function",
-                "function": {
-                    "name": "add_ticker_to_portfolio",
-                    "description": "Adds a new ticker to a specific portfolio.",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "portfolio_name": {"type": "string"},
-                            "original_ticker": {"type": "string"},
-                            "yahoo_symbol": {"type": "string"},
-                            "display_name": {"type": "string"},
-                        },
-                        "required": [
-                            "portfolio_name",
-                            "original_ticker",
-                            "yahoo_symbol",
-                            "display_name",
-                        ],
-                    },
-                },
-                "function_call": add_ticker_to_portfolio,
             },
             {
                 "type": "function",
@@ -163,17 +158,17 @@ class FinancialAgent:
         if not self.model_client:
             return "Error: No model client provided. Please configure an API key in the settings."
 
-        # Prepare tools definition for OpenAI function calling
-        tools_def = [{"type": t["type"], "function": t["function"]} for t in self.tools]
-        response = self.model_client.generate_response(user_input, tools_def)
+        # Pass the current user input and tools to the model client for processing
+        response = self.model_client.generate_response(user_input, self.tools)
 
         if hasattr(response, "tool_calls") and response.tool_calls:
             results = []
             for tool_call in response.tool_calls:
                 fn_name = tool_call.function.name
+                # Safely parse arguments passed by the LLM
                 fn_args = json.loads(tool_call.function.arguments)
 
-                # Find the matching tool definition
+                # Find the matching tool definition to execute the correct function
                 tool_def = next(
                     (t for t in self.tools if t["function"]["name"] == fn_name),
                     None,
@@ -182,6 +177,7 @@ class FinancialAgent:
                     results.append(f"Tool {fn_name} not found.")
                     continue
 
+                # Execute the function call using its bound reference
                 fn = tool_def["function_call"]
                 logger.info(f"Calling tool: {fn_name} with {fn_args}")
                 try:
@@ -193,4 +189,5 @@ class FinancialAgent:
 
             return "\n\n".join(results)
 
+        # Return the simple text content response if no tool calls were requested
         return getattr(response, "content", str(response))

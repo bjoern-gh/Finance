@@ -4,11 +4,23 @@ import logging
 import re
 import threading
 import time
+import warnings
 
 import pandas as pd
 import requests
 import yfinance as yf
 from tqdm import tqdm
+
+# Suppress third-party deprecation warnings (e.g. yfinance internal inplace calls with pandas >= 3.0)
+warnings.filterwarnings("ignore", category=DeprecationWarning, module="^yfinance")
+warnings.filterwarnings("ignore", category=FutureWarning, module="^yfinance")
+warnings.filterwarnings("ignore", message=".*inplace.*")
+try:
+    from pandas.errors import Pandas4Warning
+
+    warnings.filterwarnings("ignore", category=Pandas4Warning)
+except ImportError:
+    pass
 
 # --- Logger setup ---
 logging.basicConfig(
@@ -104,9 +116,7 @@ EXCHANGE_MAP = {
 }
 
 # Build the prefix pattern dynamically - match uppercase letters only, not lowercase
-_PREFIX_PATTERN = (
-    r"(?:" + "|".join(re.escape(p) for p in EXCHANGE_MAP) + r"):[A-Z0-9]+"
-)
+_PREFIX_PATTERN = r"(?:" + "|".join(re.escape(p) for p in EXCHANGE_MAP) + r"):[A-Z0-9]+"
 
 
 def format_large_number(num):
@@ -1104,9 +1114,7 @@ def analyze_tickers(ticker_tuples_list: list[tuple[str, str]]) -> pd.DataFrame:
 
     if max_workers > 1 and num_tickers > 1:
         workers = min(max_workers, num_tickers)
-        logger.info(
-            f"Analyzing {num_tickers} tickers in parallel ({workers} workers)."
-        )
+        logger.info(f"Analyzing {num_tickers} tickers in parallel ({workers} workers).")
         with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
             results = list(
                 tqdm(

@@ -1,5 +1,17 @@
 import configparser
 import logging
+import warnings
+
+# Suppress third-party deprecation warnings (e.g. yfinance internal inplace calls with pandas >= 3.0)
+warnings.filterwarnings("ignore", category=DeprecationWarning, module="^yfinance")
+warnings.filterwarnings("ignore", category=FutureWarning, module="^yfinance")
+warnings.filterwarnings("ignore", message=".*inplace.*")
+try:
+    from pandas.errors import Pandas4Warning
+
+    warnings.filterwarnings("ignore", category=Pandas4Warning)
+except ImportError:
+    pass
 
 # Import the main analysis function and parser
 from financial_analyzer import analyze_tickers, parse_and_convert_tickers
@@ -74,9 +86,7 @@ def main():
                 col for col in error_cols if col in failed_df.columns
             ]
             # Output the DataFrame as a string
-            logger.warning(
-                "\n" + failed_df[existing_error_cols].to_string(index=False)
-            )
+            logger.warning("\n" + failed_df[existing_error_cols].to_string(index=False))
             logger.warning(f"\n({len(failed_df)} tickers could not be loaded.)")
     else:
         logger.error("No data found or errors in all queries.")
