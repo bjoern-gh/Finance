@@ -28,7 +28,9 @@ class OpenAIClient:
 
         self.client = openai.OpenAI(api_key=self.api_key, base_url=base_url)
 
-    def generate_response(self, prompt: str, tools: list[dict]) -> dict[str, Any]:
+    def generate_response(
+        self, prompt: str, tools: list[dict[str, Any]]
+    ) -> Any:
         """
         Generates a response from OpenAI by executing the chat completion.
 
@@ -41,7 +43,9 @@ class OpenAIClient:
         """
         # CRITICAL FIX: Map the verbose internal tool definitions (tools)
         # into the minimal, API-compliant structure required by the OpenAI client.
-        tools_def = [{"type": t["type"], "function": t["function"]} for t in tools]
+        tools_def: Any = [
+            {"type": t["type"], "function": t["function"]} for t in tools
+        ]
 
         response = self.client.chat.completions.create(
             model="gpt-4o",
@@ -49,7 +53,7 @@ class OpenAIClient:
                 {
                     "role": "system",
                     # Including the full tools definition in system prompt for context.
-                    "content": f"You are a financial assistant. Available Tools: {json.dumps(tools)}",
+                    "content": f"You are a financial assistant. Available Tools: {json.dumps(tools, default=str)}",
                     "name": "system",
                 },
                 {"role": "user", "content": prompt},
@@ -68,7 +72,7 @@ class FinancialAgent:
         """
         self.model_client = model_client
         # self.tools holds the full, detailed definitions used internally by our application.
-        self.tools = [
+        self.tools: list[dict[str, Any]] = [
             {
                 "type": "function",
                 "function": {

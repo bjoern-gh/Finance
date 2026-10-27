@@ -5,6 +5,7 @@ import re
 import threading
 import time
 import warnings
+from typing import Any
 
 import pandas as pd
 import requests
@@ -172,14 +173,14 @@ def parse_and_convert_tickers(data_string: str) -> list[tuple[str, str]]:
 # ── Metric calculation helpers ─────────────────────────────────���────────────
 
 
-def _calculate_sma(hist: pd.DataFrame, period: int) -> float:
+def _calculate_sma(hist: pd.DataFrame, period: int) -> float | Any:
     """Calculate Simple Moving Average for the given period."""
     if hist.empty or len(hist) < period:
         return pd.NA
     return hist["Close"].rolling(window=period).mean().iloc[-1]
 
 
-def _calculate_rsi(hist: pd.DataFrame, period: int = 14) -> float:
+def _calculate_rsi(hist: pd.DataFrame, period: int = 14) -> float | Any:
     """Calculate Relative Strength Index (RSI) using Wilder's Exponential Smoothing.
 
     For data with at least period + 1 bars, applies Wilder's smoothing (alpha = 1 / period).
@@ -250,7 +251,10 @@ PRIMARY_SYMBOL_MAP = {
 
 
 def _enrich_stock_info(
-    original_ticker: str, yahoo_symbol: str, info: dict, ticker_obj: yf.Ticker = None
+    original_ticker: str,
+    yahoo_symbol: str,
+    info: dict,
+    ticker_obj: yf.Ticker | None = None,
 ) -> dict:
     """
     Enrich `info` dictionary with missing valuation/metric fields using:
@@ -290,8 +294,8 @@ def _enrich_stock_info(
 
 
 def _calculate_pe_ratio(
-    info: dict, curr_p: float, ticker_obj: yf.Ticker = None
-) -> float:
+    info: dict, curr_p: float, ticker_obj: yf.Ticker | None = None
+) -> float | Any:
     """Calculate Price-to-Earnings ratio with multiple fallbacks."""
     if pd.isna(curr_p):
         return pd.NA

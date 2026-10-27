@@ -372,7 +372,9 @@ def style_dataframe(df: pd.DataFrame):
 # ── Chart builder ─────────────────────────────────────────────────────────────
 
 
-def build_price_chart(yahoo_symbol: str, company_name: str, period: str) -> go.Figure:
+def build_price_chart(
+    yahoo_symbol: str, company_name: str, period: str
+) -> go.Figure | None:
     hist = get_price_history(yahoo_symbol, period)
     if hist.empty:
         return None
