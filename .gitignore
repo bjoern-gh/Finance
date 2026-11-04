@@ -20,4 +20,5 @@ portfolios/
 
 # Environment secrets — never commit the real .env, only .env.example
 .env
+.streamlit/secrets.toml
 ticker.txt

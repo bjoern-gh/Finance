@@ -910,6 +910,134 @@ def _calculate_buy_score(metrics: dict) -> tuple[int, str, list[str], list[str]]
     return score, rating, strengths, risks
 
 
+def calculate_snowflake_scores(metrics: dict) -> dict[str, Any]:
+    """
+    Calculate 5-pillar Simply Wall St style scores (0-6 each):
+    - Value (0-6): P/E multiple, PEG/Valuation status, and Target Upside.
+    - Future (0-6): Revenue growth, consensus recommendation, and analyst upside.
+    - Past (0-6): Operating profit margins, dual-SMA trend momentum, and 52W high proximity.
+    - Health (0-6): Balance sheet leverage (D/E), operating profitability, and market beta.
+    - Dividend (0-6): Dividend yield and payout sustainability from net margin.
+    Total: 0-30 points.
+    """
+    scores = {"Value": 0, "Future": 0, "Past": 0, "Health": 0, "Dividend": 0}
+
+    # ── 1. Value (0-6) ──
+    v_pts = 0
+    pe = metrics.get("P/E (KGV)")
+    val = str(metrics.get("Valuation", ""))
+    upside = metrics.get("Target Upside (%)")
+
+    if "Cheap" in val:
+        v_pts += 3
+    elif "Fair" in val:
+        v_pts += 2
+    elif "Expensive" in val:
+        v_pts += 0
+    else:
+        v_pts += 1
+
+    if isinstance(pe, (int, float)) and not pd.isna(pe):
+        if 0 < pe <= 15:
+            v_pts += 2
+        elif 15 < pe <= 25:
+            v_pts += 1
+
+    if isinstance(upside, (int, float)) and not pd.isna(upside) and upside >= 15:
+        v_pts += 1
+    scores["Value"] = min(6, v_pts)
+
+    # ── 2. Future Growth (0-6) ──
+    f_pts = 0
+    rev_growth = metrics.get("Revenue Growth (%)")
+    rec = str(metrics.get("Recommendation", "")).lower()
+
+    if isinstance(rev_growth, (int, float)) and not pd.isna(rev_growth):
+        if rev_growth >= 20:
+            f_pts += 3
+        elif rev_growth >= 10:
+            f_pts += 2
+        elif rev_growth > 0:
+            f_pts += 1
+
+    if any(k in rec for k in ["strong buy", "buy"]):
+        f_pts += 2
+    elif "hold" in rec:
+        f_pts += 1
+
+    if isinstance(upside, (int, float)) and not pd.isna(upside) and upside >= 25:
+        f_pts += 1
+    scores["Future"] = min(6, f_pts)
+
+    # ── 3. Past Performance (0-6) ──
+    p_pts = 0
+    margin = metrics.get("Profit Margin (%)")
+    trend = str(metrics.get("Trend", ""))
+    w52_high = metrics.get("52W High (%)")
+    biz_model = str(metrics.get("Business Model", ""))
+
+    # Royalty models naturally enjoy 60-80% margins, general miners/companies 15-20%
+    margin_threshold = 40.0 if biz_model == "Royalty & Streaming" else 15.0
+    if isinstance(margin, (int, float)) and not pd.isna(margin):
+        if margin >= margin_threshold:
+            p_pts += 3
+        elif margin >= (margin_threshold / 2):
+            p_pts += 2
+        elif margin > 0:
+            p_pts += 1
+
+    if trend in ["STRONG BUY", "BULLISH"]:
+        p_pts += 2
+    elif trend == "HOLD":
+        p_pts += 1
+
+    if isinstance(w52_high, (int, float)) and not pd.isna(w52_high) and w52_high >= -15:
+        p_pts += 1
+    scores["Past"] = min(6, p_pts)
+
+    # ── 4. Financial Health (0-6) ──
+    h_pts = 0
+    de = metrics.get("D/E Ratio")
+    beta = metrics.get("Beta")
+
+    if biz_model == "Royalty & Streaming":
+        # Royalty companies typically carry little to no debt & minimal capex
+        h_pts += 3
+    elif isinstance(de, (int, float)) and not pd.isna(de):
+        if de <= 0.4:
+            h_pts += 3
+        elif de <= 1.0:
+            h_pts += 2
+        elif de <= 1.8:
+            h_pts += 1
+
+    if isinstance(margin, (int, float)) and not pd.isna(margin) and margin > 0:
+        h_pts += 2
+
+    if isinstance(beta, (int, float)) and not pd.isna(beta) and beta <= 1.1:
+        h_pts += 1
+    scores["Health"] = min(6, h_pts)
+
+    # ── 5. Dividend (0-6) ──
+    d_pts = 0
+    div_yield = metrics.get("Dividend Yield (%)")
+    if isinstance(div_yield, (int, float)) and not pd.isna(div_yield) and div_yield > 0:
+        if div_yield >= 4.0:
+            d_pts += 4
+        elif div_yield >= 2.0:
+            d_pts += 3
+        else:
+            d_pts += 2
+        if isinstance(margin, (int, float)) and not pd.isna(margin) and margin > 10:
+            d_pts += 2
+    scores["Dividend"] = min(6, d_pts)
+
+    scores["Total"] = sum(
+        scores[k] for k in ["Value", "Future", "Past", "Health", "Dividend"]
+    )
+    return scores
+
+
 # ── Main data fetcher ────────────────────────────────────────────────────────
 
 
@@ -935,6 +1063,8 @@ def get_financial_metrics(ticker_tuple: tuple[str, str]) -> dict:
         "Valuation": "N/A",
         "Buy Score": pd.NA,
         "Opportunity Rating": "N/A",
+        "Snowflake Score": pd.NA,
+        "Snowflake Details": {},
         "Target Price": pd.NA,
         "Target Upside (%)": pd.NA,
         "Recommendation": "N/A",
@@ -1055,6 +1185,11 @@ def get_financial_metrics(ticker_tuple: tuple[str, str]) -> dict:
                 **analyst,
             }
             buy_score, opp_rating, strengths, risks = _calculate_buy_score(interim)
+            snowflake_metrics = {
+                **interim,
+                "Business Model": optional.get("Business Model", ""),
+            }
+            snowflake = calculate_snowflake_scores(snowflake_metrics)
 
             result = {
                 "Original Ticker": original_ticker,
@@ -1076,6 +1211,8 @@ def get_financial_metrics(ticker_tuple: tuple[str, str]) -> dict:
                 "Valuation": valuation,
                 "Buy Score": buy_score,
                 "Opportunity Rating": opp_rating,
+                "Snowflake Score": snowflake["Total"],
+                "Snowflake Details": snowflake,
                 **analyst,
                 **w52,
                 **optional,

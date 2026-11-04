@@ -39,7 +39,9 @@ from financial_analyzer import (
 logger = logging.getLogger(__name__)
 
 # ── Page config ──────────────────────────────────────────────────────────────
-st.set_page_config(layout="wide", page_title="Financial Analysis", page_icon="📈")
+st.set_page_config(
+    layout="wide", page_title="Financial Analysis", page_icon=":material/trending_up:"
+)
 
 # ── Auth ──────────────────────────────────────────────────────────────────────
 
@@ -133,19 +135,25 @@ def render_login():
     return False
 
 
-# ── Company search via Yahoo Finance API ─────────────────────────────────────
+# ── Caching & data loaders ───────────────────────────────────────────────────
 
 
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=60, max_entries=100)
 def search_company(query: str) -> list[dict]:
     """Search Yahoo Finance for companies matching a name or ticker query."""
     return search_company_backend(query)
 
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=300, max_entries=20)
 def run_analysis_cached(ticker_tuples: tuple) -> pd.DataFrame:
     """Cached wrapper around analyze_tickers. Cache invalidates every 5 minutes."""
     return analyze_tickers(list(ticker_tuples))
+
+
+@st.cache_data(ttl=300, max_entries=100)
+def get_price_history_cached(yahoo_symbol: str, period: str = "1y") -> pd.DataFrame:
+    """Fetch and cache OHLCV history with indicators for charting."""
+    return get_price_history(yahoo_symbol, period)
 
 
 # ── Styling helpers ───────────────────────────────────────────────────────────
@@ -375,7 +383,7 @@ def style_dataframe(df: pd.DataFrame):
 def build_price_chart(
     yahoo_symbol: str, company_name: str, period: str
 ) -> go.Figure | None:
-    hist = get_price_history(yahoo_symbol, period)
+    hist = get_price_history_cached(yahoo_symbol, period)
     if hist.empty:
         return None
 
@@ -459,6 +467,10 @@ def build_price_chart(
         height=600,
         xaxis_rangeslider_visible=False,
         template="plotly_dark",
+        font={"family": "Inter, -apple-system, BlinkMacSystemFont, sans-serif"},
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        hovermode="x unified",
         legend={
             "orientation": "h",
             "yanchor": "bottom",
@@ -468,8 +480,25 @@ def build_price_chart(
         },
         margin={"l": 0, "r": 0, "t": 40, "b": 0},
     )
-    fig.update_yaxes(title_text="Price", row=1, col=1)
-    fig.update_yaxes(title_text="RSI", row=2, col=1, range=[0, 100])
+    fig.update_xaxes(
+        gridcolor="rgba(148, 163, 184, 0.15)",
+        zerolinecolor="rgba(148, 163, 184, 0.2)",
+    )
+    fig.update_yaxes(
+        title_text="Price",
+        row=1,
+        col=1,
+        gridcolor="rgba(148, 163, 184, 0.15)",
+        zerolinecolor="rgba(148, 163, 184, 0.2)",
+    )
+    fig.update_yaxes(
+        title_text="RSI",
+        row=2,
+        col=1,
+        range=[0, 100],
+        gridcolor="rgba(148, 163, 184, 0.15)",
+        zerolinecolor="rgba(148, 163, 184, 0.2)",
+    )
 
     return fig
 
@@ -574,17 +603,16 @@ def render_sidebar():
         st.session_state.auth_user = ""
         st.rerun()
 
-    st.sidebar.divider()
     st.sidebar.subheader(":material/folder: Portfolios")
 
     portfolios = pm.list_portfolios()
 
     if not portfolios:
-        st.info("No portfolios yet. Create one below.")
+        st.sidebar.info("No portfolios yet. Create one below.")
         st.session_state.current_portfolio = None
     else:
         selected = st.sidebar.selectbox(
-            "Active Portfolio",
+            "Active portfolio",
             portfolios,
             index=(
                 portfolios.index(st.session_state.current_portfolio)
@@ -601,8 +629,6 @@ def render_sidebar():
         tickers = get_current_tickers()
         st.sidebar.caption(f"{len(tickers)} stock{'s' if len(tickers) != 1 else ''}")
 
-    st.sidebar.divider()
-
     col1, col2 = st.sidebar.columns(2)
     if col1.button(":material/add: New", width="stretch"):
         st.session_state.creating_portfolio = True
@@ -615,8 +641,8 @@ def render_sidebar():
         st.session_state.creating_portfolio = False
 
     if st.session_state.creating_portfolio:
-        new_name = st.sidebar.text_input("Portfolio name:", key="new_portfolio_name")
-        if st.sidebar.button("Create", key="confirm_create") and new_name.strip():
+        new_name = st.sidebar.text_input("Portfolio name", key="new_portfolio_name")
+        if st.sidebar.button("Create portfolio", type="primary", width="stretch", key="confirm_create") and new_name.strip():
             pm.save_portfolio(new_name.strip(), [])
             st.session_state.current_portfolio = new_name.strip()
             st.session_state.creating_portfolio = False
@@ -624,9 +650,9 @@ def render_sidebar():
 
     if st.session_state.renaming_portfolio and st.session_state.current_portfolio:
         rename_to = st.sidebar.text_input(
-            "New name:", value=st.session_state.current_portfolio, key="rename_input"
+            "New name", value=st.session_state.current_portfolio, key="rename_input"
         )
-        if st.sidebar.button("Save name", key="confirm_rename") and (
+        if st.sidebar.button("Save name", type="primary", width="stretch", key="confirm_rename") and (
             rename_to.strip()
             and rename_to.strip() != st.session_state.current_portfolio
         ):
@@ -635,34 +661,25 @@ def render_sidebar():
             st.session_state.renaming_portfolio = False
             st.rerun()
 
-    if st.session_state.current_portfolio:
-        st.sidebar.divider()
-        if st.sidebar.button(
-            f":material/delete: Delete '{st.session_state.current_portfolio}'",
-            type="secondary",
-            width="stretch",
-        ):
-            pm.delete_portfolio(st.session_state.current_portfolio)
-            remaining = pm.list_portfolios()
-            st.session_state.current_portfolio = remaining[0] if remaining else None
-            st.session_state.analysis_results = None
-            st.rerun()
+    if st.session_state.current_portfolio and st.sidebar.button(
+        f":material/delete: Delete '{st.session_state.current_portfolio}'",
+        type="secondary",
+        width="stretch",
+    ):
+        pm.delete_portfolio(st.session_state.current_portfolio)
+        remaining = pm.list_portfolios()
+        st.session_state.current_portfolio = remaining[0] if remaining else None
+        st.session_state.analysis_results = None
+        st.rerun()
 
 
 # ── Tab: Build Portfolio ──────────────────────────────────────────────────────
 
 
-def render_build_tab():
-    if not st.session_state.current_portfolio:
-        st.info("Create a portfolio in the sidebar to get started.")
-        return
-
-    tickers = get_current_tickers()
-    portfolio_name = st.session_state.current_portfolio
-
-    # ── Search ──
+@st.fragment
+def render_company_search(portfolio_name: str, tickers: list[dict]):
     with st.container(border=True):
-        st.subheader(":material/search: Search & Add Companies")
+        st.subheader(":material/search: Search & add companies")
         search_col, _ = st.columns([3, 1])
         with search_col:
             query = st.text_input(
@@ -677,7 +694,7 @@ def render_build_tab():
 
             if results:
                 for r in results[:8]:
-                    c1, c2 = st.columns([4, 1])
+                    c1, c2 = st.columns([4, 1], vertical_alignment="center")
                     c1.markdown(
                         f"**{r['name']}** &nbsp; `{r['symbol']}` &nbsp; *{r['exchange']}* &nbsp; {r['type']}"
                     )
@@ -698,9 +715,21 @@ def render_build_tab():
             else:
                 st.caption("No results found.")
 
+
+def render_build_tab():
+    if not st.session_state.current_portfolio:
+        st.info("Create a portfolio in the sidebar to get started.")
+        return
+
+    tickers = get_current_tickers()
+    portfolio_name = st.session_state.current_portfolio
+
+    # ── Search ──
+    render_company_search(portfolio_name, tickers)
+
     # ── Import ──
     with st.container(border=True):
-        st.subheader(":material/upload_file: Import from File")
+        st.subheader(":material/upload_file: Import from file")
         st.caption(
             "Upload a .txt or .csv with one entry per line: "
             "company names, plain tickers (AAPL), or prefixed tickers (FRA:SAP, NASDAQ:NVDA)."
@@ -760,13 +789,13 @@ def render_build_tab():
 
     # ── Curated Market Baskets ──
     with st.container(border=True):
-        st.subheader(":material/explore: Curated Market Baskets")
+        st.subheader(":material/explore: Curated market baskets")
         st.caption(
             "Quickly load vetted screening universes into your watchlist to scan for buying opportunities."
         )
 
         curated_baskets = {
-            "👑 Royalty & Streaming": [
+            ":material/crown: Royalty & streaming": [
                 ("FNV", "FNV", "Franco-Nevada"),
                 ("WPM", "WPM", "Wheaton Precious Metals"),
                 ("RGLD", "RGLD", "Royal Gold"),
@@ -776,7 +805,7 @@ def render_build_tab():
                 ("TSX:OR", "OR.TO", "Osisko Gold Royalties"),
                 ("TSX:MTA", "MTA.TO", "Metalla Royalty"),
             ],
-            "🛡️ Dividend Aristocrats": [
+            ":material/shield: Dividend aristocrats": [
                 ("JNJ", "JNJ", "Johnson & Johnson"),
                 ("PG", "PG", "Procter & Gamble"),
                 ("PEP", "PEP", "PepsiCo"),
@@ -786,7 +815,7 @@ def render_build_tab():
                 ("CAT", "CAT", "Caterpillar"),
                 ("CVX", "CVX", "Chevron"),
             ],
-            "🚀 Global Quality Leaders": [
+            ":material/rocket_launch: Global quality leaders": [
                 ("MSFT", "MSFT", "Microsoft"),
                 ("AAPL", "AAPL", "Apple"),
                 ("GOOGL", "GOOGL", "Alphabet"),
@@ -795,7 +824,7 @@ def render_build_tab():
                 ("ETR:SAP", "SAP.DE", "SAP SE"),
                 ("TSM", "TSM", "TSMC"),
             ],
-            "💎 European Stalwarts": [
+            ":material/diamond: European stalwarts": [
                 ("ETR:SAP", "SAP.DE", "SAP"),
                 ("ETR:ALV", "ALV.DE", "Allianz"),
                 ("ETR:SIE", "SIE.DE", "Siemens"),
@@ -813,7 +842,7 @@ def render_build_tab():
                 st.markdown(f"**{b_name}**")
                 st.caption(f"{len(b_tickers)} stocks")
                 if st.button(
-                    ":material/add_circle: Add Basket",
+                    ":material/add_circle: Add basket",
                     key=f"add_basket_{idx}",
                     width="stretch",
                 ):
@@ -828,14 +857,14 @@ def render_build_tab():
     # ── Current portfolio list ──
     with st.container(border=True):
         st.subheader(
-            f":material/list_alt: Current Portfolio — {portfolio_name} ({len(tickers)} stocks)"
+            f":material/list_alt: Current portfolio — {portfolio_name} ({len(tickers)} stocks)"
         )
 
         if not tickers:
             st.info("No stocks yet. Search above or import a file.")
         else:
             for i, t in enumerate(tickers):
-                c1, c2, c3 = st.columns([2, 5, 1])
+                c1, c2, c3 = st.columns([2, 5, 1], vertical_alignment="center")
                 c1.code(t["yahoo"])
                 c2.write(t.get("display_name") or t["original"])
                 if c3.button(
@@ -849,7 +878,7 @@ def render_build_tab():
 
     # ── Portfolio export / import ──
     with st.container(border=True):
-        st.subheader(":material/sync_alt: Export / Import Portfolio")
+        st.subheader(":material/sync_alt: Export / import portfolio")
         exp_col, imp_col = st.columns(2)
 
         with exp_col:
@@ -971,6 +1000,13 @@ def render_analysis_tab():
     success_df = df[df["Status"] == "OK"].copy()
     failed_df = df[df["Status"] != "OK"].copy()
 
+    render_analysis_results(success_df, failed_df, portfolio_name)
+
+
+@st.fragment
+def render_analysis_results(
+    success_df: pd.DataFrame, failed_df: pd.DataFrame, portfolio_name: str
+):
     if not success_df.empty:
         st.subheader(
             f":material/check_circle: Results — {len(success_df)} stocks loaded"
@@ -1010,7 +1046,8 @@ def render_analysis_tab():
         view_df = success_df.copy()
         if "Business Model" in success_df.columns or "Sector" in success_df.columns:
             with st.expander(
-                "Filter Options (Business Model & Sector)", expanded=False
+                ":material/filter_list: Filter options (business model & sector)",
+                expanded=False,
             ):
                 f1, f2 = st.columns(2)
 
@@ -1024,7 +1061,7 @@ def render_analysis_tab():
                     )
                     if avail_models:
                         selected_models = f1.multiselect(
-                            "Filter Business Model:",
+                            "Filter business model:",
                             options=avail_models,
                             default=avail_models,
                             help="Filter between Royalty & Streaming, Operating Miner, and Operating Company",
@@ -1041,7 +1078,7 @@ def render_analysis_tab():
                     )
                     if avail_sectors:
                         selected_sectors = f2.multiselect(
-                            "Filter Sector:",
+                            "Filter sector:",
                             options=avail_sectors,
                             default=avail_sectors,
                             help="Filter by company sector",
@@ -1086,41 +1123,41 @@ def render_analysis_tab():
                     by=["kvg_group", "P/E (KGV)"], ascending=[True, True]
                 ).drop(columns=["kvg_group"])
 
-            st.subheader(":material/local_fire_department: Buying Opportunities")
+            st.subheader(":material/local_fire_department: Buying opportunities")
             st.caption(
-                "Ranked by **Composite Buy Score (0–100)** incorporating valuation, trend momentum, balance sheet health, and analyst target upside."
+                "Ranked by **composite buy score (0–100)** incorporating valuation, trend momentum, balance sheet health, and analyst target upside."
             )
 
             # Strategy view selection
             opp_views = [
-                "All Opportunities",
-                "Top Confluence (Score ≥ 75)",
-                "High Upside (> 20%)",
-                "Value Bargains (P/E < 15)",
+                "All opportunities",
+                "Top confluence (Score ≥ 75)",
+                "High upside (> 20%)",
+                "Value bargains (P/E < 15)",
             ]
             if (
                 "Opportunity Rating" in view_df.columns
                 and (view_df["Opportunity Rating"] == "Value Trap Risk").any()
             ):
-                opp_views.append("⚠️ Value Trap Warnings")
+                opp_views.append(":material/warning: Value trap warnings")
 
             selected_opp_view = st.pills(
-                "Filter Opportunities:",
+                "Filter opportunities:",
                 options=opp_views,
-                default="All Opportunities",
+                default="All opportunities",
                 label_visibility="collapsed",
             )
 
             display_rec_df = recommended_df.copy()
             if (
-                selected_opp_view == "Top Confluence (Score ≥ 75)"
+                selected_opp_view == "Top confluence (Score ≥ 75)"
                 and "Buy Score" in display_rec_df.columns
             ):
                 display_rec_df = display_rec_df[
                     pd.to_numeric(display_rec_df["Buy Score"], errors="coerce") >= 75
                 ]
             elif (
-                selected_opp_view == "High Upside (> 20%)"
+                selected_opp_view == "High upside (> 20%)"
                 and "Target Upside (%)" in display_rec_df.columns
             ):
                 display_rec_df = display_rec_df[
@@ -1128,12 +1165,12 @@ def render_analysis_tab():
                     >= 20.0
                 ]
             elif (
-                selected_opp_view == "Value Bargains (P/E < 15)"
+                selected_opp_view == "Value bargains (P/E < 15)"
                 and "P/E (KGV)" in display_rec_df.columns
             ):
                 pe_nums = pd.to_numeric(display_rec_df["P/E (KGV)"], errors="coerce")
                 display_rec_df = display_rec_df[(pe_nums > 0) & (pe_nums <= 15.0)]
-            elif selected_opp_view == "⚠️ Value Trap Warnings":
+            elif selected_opp_view == ":material/warning: Value trap warnings":
                 display_rec_df = view_df[
                     view_df["Opportunity Rating"] == "Value Trap Risk"
                 ].copy()
@@ -1153,62 +1190,64 @@ def render_analysis_tab():
                     or "Key Risks" in display_rec_df.columns
                 ):
                     with st.expander(
-                        ":material/insights: Opportunity Dossiers & Risk Analysis",
+                        ":material/insights: Opportunity dossiers & risk analysis",
                         expanded=False,
                     ):
                         for _, row in display_rec_df.head(6).iterrows():
                             company_label = f"**{row.get('Company')}** (`{row.get('Yahoo Symbol')}`)"
                             rating_label = row.get("Opportunity Rating", "N/A")
                             score_val = row.get("Buy Score", "N/A")
-                            st.markdown(
-                                f"#### {company_label} — Score: **{score_val}/100** ({rating_label})"
-                            )
 
-                            col_m1, col_m2, col_m3, col_m4 = st.columns(4)
-                            price_formatted = format_2_decimals(row.get("Price"))
-                            col_m1.metric(
-                                "Current Price",
-                                f"{price_formatted} {row.get('Currency', '')}".strip(),
-                            )
-                            upside_raw = row.get("Target Upside (%)")
-                            upside_formatted = (
-                                format_target_upside(upside_raw)
-                                if pd.notna(upside_raw)
-                                and upside_raw not in ("N/A", "")
-                                else "N/A"
-                            )
-                            col_m2.metric(
-                                "Target Upside",
-                                upside_formatted,
-                            )
-                            col_m3.metric("Valuation", str(row.get("Valuation", "N/A")))
-                            col_m4.metric("Trend", str(row.get("Trend", "N/A")))
-
-                            strengths_text = str(row.get("Key Strengths", "")).strip()
-                            risks_text = str(row.get("Key Risks", "")).strip()
-
-                            d_col1, d_col2 = st.columns(2)
-                            with d_col1:
+                            with st.container(border=True):
                                 st.markdown(
-                                    "**:material/check_circle: Bullish Catalysts & Strengths:**"
+                                    f"#### {company_label} · Score: **{score_val}/100** ({rating_label})"
                                 )
-                                if strengths_text:
-                                    for item in strengths_text.split("; "):
-                                        if item:
-                                            st.markdown(f"- {item}")
-                                else:
-                                    st.caption("None flagged.")
-                            with d_col2:
-                                st.markdown(
-                                    "**:material/warning: Risk Factors & Headwinds:**"
+
+                                col_m1, col_m2, col_m3, col_m4 = st.columns(4)
+                                price_formatted = format_2_decimals(row.get("Price"))
+                                col_m1.metric(
+                                    "Current price",
+                                    f"{price_formatted} {row.get('Currency', '')}".strip(),
                                 )
-                                if risks_text:
-                                    for item in risks_text.split("; "):
-                                        if item:
-                                            st.markdown(f"- {item}")
-                                else:
-                                    st.caption("No major red flags identified.")
-                            st.divider()
+                                upside_raw = row.get("Target Upside (%)")
+                                upside_formatted = (
+                                    format_target_upside(upside_raw)
+                                    if pd.notna(upside_raw)
+                                    and upside_raw not in ("N/A", "")
+                                    else "-"
+                                )
+                                col_m2.metric(
+                                    "Target upside",
+                                    upside_formatted,
+                                    delta=upside_formatted if upside_formatted != "-" else None,
+                                )
+                                col_m3.metric("Valuation", str(row.get("Valuation", "N/A")))
+                                col_m4.metric("Trend", str(row.get("Trend", "N/A")))
+
+                                strengths_text = str(row.get("Key Strengths", "")).strip()
+                                risks_text = str(row.get("Key Risks", "")).strip()
+
+                                d_col1, d_col2 = st.columns(2)
+                                with d_col1:
+                                    st.markdown(
+                                        "**:material/check_circle: Bullish catalysts & strengths:**"
+                                    )
+                                    if strengths_text:
+                                        for item in strengths_text.split("; "):
+                                            if item:
+                                                st.markdown(f"- {item}")
+                                    else:
+                                        st.caption("None flagged.")
+                                with d_col2:
+                                    st.markdown(
+                                        "**:material/warning: Risk factors & headwinds:**"
+                                    )
+                                    if risks_text:
+                                        for item in risks_text.split("; "):
+                                            if item:
+                                                st.markdown(f"- {item}")
+                                    else:
+                                        st.caption("No major red flags identified.")
             else:
                 st.info(
                     f"No stocks currently match the filter: **{selected_opp_view}**."
@@ -1263,6 +1302,7 @@ def render_analysis_tab():
 # ── Tab: Charts ───────────────────────────────────────────────────────────────
 
 
+@st.fragment
 def render_charts_tab():
     if not st.session_state.current_portfolio:
         st.info("Create a portfolio first.")
@@ -1279,7 +1319,7 @@ def render_charts_tab():
         for t in tickers
     }
 
-    c1, c2 = st.columns([3, 2])
+    c1, c2 = st.columns([3, 2], vertical_alignment="bottom")
     selected_label = c1.selectbox("Select stock", list(options.keys()))
     period = c2.segmented_control(
         "Period",
@@ -1298,15 +1338,34 @@ def render_charts_tab():
         row = df[df["Yahoo Symbol"] == yahoo_symbol]
         if not row.empty:
             r = row.iloc[0]
-            m1, m2, m3, m4, m5, m6 = st.columns(6)
-            m1.metric("Price", format_2_decimals(r.get("Price")))
-            m2.metric("RSI", format_2_decimals(r.get("RSI")))
-            m3.metric("P/E", format_2_decimals(r.get("P/E (KGV)")))
-            m4.metric("Trend", str(r.get("Trend", "N/A")))
-            w52_h = format_2_decimals(r.get("52W High (%)"))
-            m5.metric("52W High", f"{w52_h}%" if w52_h != "N/A" else "N/A")
-            w52_l = format_2_decimals(r.get("52W Low (%)"))
-            m6.metric("52W Low", f"{w52_l}%" if w52_l != "N/A" else "N/A")
+            with st.container(border=True):
+                m1, m2, m3, m4 = st.columns(4)
+                price_val = format_2_decimals(r.get("Price"))
+                curr = r.get("Currency", "")
+                m1.metric("Current price", f"{price_val} {curr}".strip())
+                m2.metric("RSI (14)", format_2_decimals(r.get("RSI")))
+                m3.metric("P/E (KGV)", format_2_decimals(r.get("P/E (KGV)")))
+                m4.metric("Trend", str(r.get("Trend", "N/A")))
+
+                m5, m6, m7, m8 = st.columns(4)
+                buy_score = r.get("Buy Score")
+                m5.metric(
+                    "Buy score",
+                    f"{format_2_decimals(buy_score)}" if pd.notna(buy_score) else "N/A",
+                )
+                upside_raw = r.get("Target Upside (%)")
+                upside_str = (
+                    format_target_upside(upside_raw) if pd.notna(upside_raw) else "-"
+                )
+                m6.metric(
+                    "Target upside",
+                    upside_str,
+                    delta=upside_str if upside_str != "-" else None,
+                )
+                w52_h = format_2_decimals(r.get("52W High (%)"))
+                m7.metric("52W high", f"{w52_h}%" if w52_h != "N/A" else "N/A")
+                w52_l = format_2_decimals(r.get("52W Low (%)"))
+                m8.metric("52W low", f"{w52_l}%" if w52_l != "N/A" else "N/A")
 
     with st.spinner("Loading chart..."):
         fig = build_price_chart(yahoo_symbol, company_name, period)
@@ -1333,7 +1392,7 @@ def main():
 
     tab1, tab2, tab3 = st.tabs(
         [
-            ":material/add_circle: Build Portfolio",
+            ":material/add_circle: Build portfolio",
             ":material/analytics: Analysis",
             ":material/show_chart: Charts",
         ]

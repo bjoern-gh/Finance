@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "skills": {
+    "finance-skills-yfinance-data": {
+      "version": "1.0.4",
+      "installedAt": "2026-10-29T08:36:38.023Z",
+      "platform": "junie"
+    }
+  }
+}

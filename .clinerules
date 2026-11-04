@@ -1,0 +1,16 @@
+# General Project Instructions
+
+## Environment & Tech Stack
+- **Language**: Python 3.12+
+- **Core Libraries**: pandas, streamlit, fastapi, plotly, yfinance, requests, openpyxl, configparser, tqdm, uvicorn
+- **Architecture**: Keep code clean, modular, and well-typed (use type hints).
+
+## Tool Usage & Autonomy Rules
+1. **Terminal Command Format**:
+   - ALWAYS execute terminal commands using a single combined string passed to `execute_command` or `run_commands`.
+   - Never pass an array of separate strings to `commands`.
+   - Combine multiple steps into one line using `&&`.
+   - Example: `git add . && git commit -m "commit message"`
+
+2. **Git Commit Workflow**:
+   - When asked to commit, run `git add . && git commit -m "<message>"` as ONE single string command.
