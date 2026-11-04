@@ -1,4 +1,4 @@
-# Financial Analysis App (v1.6.0)
+# Financial Analysis App (v1.7.0)
 
 A stock analysis application that fetches live data from Yahoo Finance, calculates key metrics, and lets you manage multiple watchlists/portfolios. Built with Streamlit (UI), FastAPI (REST API), and yfinance.
 

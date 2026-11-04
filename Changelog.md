@@ -5,6 +5,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.0] - 2026-11-04
+
+### Added
+- **Modern Dense Dual-Mode Theming**:
+  - Configured project-wide Streamlit theme in `.streamlit/config.toml` featuring Google Fonts (`Inter` and `JetBrains Mono`), slate background palette, semantic financial indicator colors, 6px subtle radii, and compact dashboard layout padding (`paddingTop = 0.5rem`).
+  - Preserved the user-facing light/dark mode settings toggle.
+- **Partial Reruns with `@st.fragment`**:
+  - Isolated the Charts tab (`render_charts_tab`) into an `@st.fragment`: timeframe changes and stock switching update instantly without re-evaluating the rest of the application.
+  - Isolated Analysis filtering (`render_analysis_results`) into an `@st.fragment`: strategy pill filtering and business model / sector multiselects rerun in-memory without invoking network queries.
+  - Isolated live ticker searching (`render_company_search`) into an `@st.fragment` within the portfolio builder.
+- **Bounded Caching & Price History Caching**:
+  - Added `@st.cache_data(ttl=300, max_entries=100)` for `get_price_history_cached`, eliminating redundant network latency when browsing stock histories.
+  - Added `max_entries` bounds across cached data operations to safeguard against long-session memory leaks.
+- **5-Pillar Snowflake Scoring Engine**:
+  - Added `calculate_snowflake_scores` in `financial_analyzer.py` providing Simply Wall St style multi-pillar scoring (Value, Future Growth, Past Performance, Financial Health, Dividend Sustainability; 0–30 total score).
+
+### Changed
+- **UI Component & Visual Modernization**:
+  - Replaced legacy emojis with native Material Symbols (`:material/trending_up:`, `:material/crown:`, `:material/shield:`, `:material/rocket_launch:`, `:material/diamond:`, `:material/warning:`).
+  - Upgraded Opportunity Dossiers with individual bordered container cards (`st.container(border=True)`) and added dynamic Target Upside delta indicators.
+  - Redesigned stock chart header with an 8-KPI responsive metrics overview and bottom-aligned selector controls.
+  - Styled Plotly charts with transparent background embedding and coordinated grid lines.
+  - Standardized all titles, section labels, and action buttons to clean sentence casing.
+
+### Security
+- Added `.streamlit/secrets.toml` to `.gitignore` to prevent credential exposure.
+
+---
+
 ## [1.6.0] - 2026-10-27
 
 ### Added

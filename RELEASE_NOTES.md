@@ -1,3 +1,46 @@
+# Release Notes — Version 1.7.0
+
+**Release Date:** November 4, 2026  
+**Build:** v1.7.0  
+**Test Suite:** 132 passing tests (`0.52s`)  
+**Code Quality:** 0 Ruff violations (Ruff 0.17+)  
+**Compatibility:** Python 3.11–3.13, Streamlit 1.31+ (optimized for 1.66+), FastAPI 0.108+  
+
+---
+
+## Executive Summary
+
+Version 1.7.0 introduces modern UI design and performance architectures to the Financial Analysis platform. It introduces a custom dense dual-mode theme with Google Fonts, replaces emojis with native Material Symbols, transitions chart and dossier views to bordered container cards, accelerates interactivity with `@st.fragment` partial reruns, adds bounded in-memory caching with price history caching, and integrates a 5-pillar Simply Wall St style Snowflake scoring engine.
+
+---
+
+## Key Highlights & Improvements
+
+### 1. Modern Dense Dual-Mode Theming (`.streamlit/config.toml`)
+- **Typography**: Streamlit-native integration of Google Fonts (`Inter` for UI headers/body and `JetBrains Mono` for ticker symbols and codes).
+- **Dense Dashboard Palette**: Configured compact padding (`paddingTop = 0.5rem`) for high information-density KPI layouts, slate backgrounds, and custom financial indicators while preserving the light/dark user appearance toggle.
+- **Micro-Styling**: Subtle 6px rounded borders on widgets and containers with widget and sidebar borders enabled.
+
+### 2. High-Performance Partial Reruns (`@st.fragment`)
+- **Instant Chart Interaction**: Wrapped `render_charts_tab` in `@st.fragment` so switching stock symbols or period intervals updates only the chart view without triggering full-app reruns.
+- **Fast Analysis Filtering**: Isolated `render_analysis_results` in `@st.fragment` so opportunity strategy pills (*All opportunities*, *Top confluence*, *High upside*, *Value bargains*, *Value trap warnings*) and multiselect controls update tables in memory with zero network delay.
+- **Live Search Isolation**: Isolated company search queries in `@st.fragment` within the portfolio builder.
+
+### 3. Price History Caching & Bounded Caches
+- **Sub-Millisecond Chart Browsing**: Added `@st.cache_data(ttl=300, max_entries=100)` for `get_price_history_cached`, caching OHLCV data and technical indicators.
+- **Bounded Cache Storage**: Configured `max_entries` limits across data loading functions to prevent memory leaks during long-running sessions.
+
+### 4. UI Modernization & Accessibility
+- **Material Symbols**: Fully transitioned from raw emojis to native Material Symbols (`:material/trending_up:`, `:material/crown:`, `:material/shield:`, `:material/rocket_launch:`, `:material/diamond:`, `:material/warning:`).
+- **Opportunity Dossier Cards**: Replaced horizontal dividers with individual bordered container cards (`st.container(border=True)`) and dynamic Target Upside delta indicators.
+- **Responsive 8-KPI Overview**: Upgraded the stock chart view with a balanced 8-metric KPI card.
+- **Plotly Integration**: Applied transparent background rendering and synchronized font styling for charts.
+
+### 5. 5-Pillar Snowflake Scoring
+- Added `calculate_snowflake_scores` in `financial_analyzer.py` evaluating Value, Future Growth, Past Performance, Financial Health, and Dividend Sustainability (0–30 total score).
+
+---
+
 # Release Notes — Version 1.6.0
 
 **Release Date:** October 27, 2026  
