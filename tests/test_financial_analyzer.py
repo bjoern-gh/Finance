@@ -18,7 +18,11 @@ from financial_analyzer import (
     _determine_valuation_status,
     _get_analyst_metrics,
     _get_optional_metrics,
+    calculate_cash_runway,
+    calculate_snowflake_scores,
     determine_business_model,
+    determine_mining_lifecycle,
+    determine_primary_commodity,
     format_large_number,
     get_financial_metrics,
     parse_and_convert_tickers,
@@ -918,3 +922,228 @@ def test_determine_valuation_status_helper(
 def test_determine_business_model(orig_ticker, yahoo_symbol, info, expected_model):
     model = determine_business_model(orig_ticker, yahoo_symbol, info)
     assert model == expected_model
+
+
+@pytest.mark.parametrize(
+    "info, expected_commodity, expected_category",
+    [
+        ({"industry": "Gold"}, "Gold", "Precious Metals"),
+        ({"industry": "Silver"}, "Silver", "Precious Metals"),
+        (
+            {
+                "industry": "Other Industrial Metals & Mining",
+                "longBusinessSummary": "Explores for gold deposits in Canada.",
+            },
+            "Gold",
+            "Precious Metals",
+        ),
+        (
+            {
+                "longName": "Sprott Physical Uranium Trust",
+                "industry": "Asset Management",
+                "longBusinessSummary": "Holds physical U3O8 uranium.",
+            },
+            "Uranium",
+            "Critical Metals",
+        ),
+        ({"industry": "Copper"}, "Copper", "Critical Metals"),
+        (
+            {"longBusinessSummary": "Developing hard-rock spodumene lithium deposits."},
+            "Lithium",
+            "Critical Metals",
+        ),
+        (
+            {"longBusinessSummary": "Focuses on nickel-cobalt sulfide exploration."},
+            "Nickel",
+            "Critical Metals",
+        ),
+        (
+            {
+                "longBusinessSummary": "High-grade rare earth elements and magnet metals project."
+            },
+            "Rare Earths",
+            "Critical Metals",
+        ),
+        ({"industry": "Aluminum"}, "Aluminum", "Base Metals"),
+        (
+            {"longBusinessSummary": "Operating iron ore pellet export terminal."},
+            "Iron Ore",
+            "Base Metals",
+        ),
+        (
+            {"industry": "Consumer Electronics", "sector": "Technology"},
+            "Non-Resource",
+            "Non-Resource",
+        ),
+        ({}, "N/A", "N/A"),
+        (None, "N/A", "N/A"),
+    ],
+)
+def test_determine_primary_commodity(info, expected_commodity, expected_category):
+    res = determine_primary_commodity(info)
+    assert res["Commodity"] == expected_commodity
+    assert res["Commodity Category"] == expected_category
+
+
+@pytest.mark.parametrize(
+    "orig, yahoo, info, expected_stage",
+    [
+        ("FNV", "FNV.TO", {"industry": "Gold"}, "Royalty & Streaming"),
+        (
+            "SKE.TO",
+            "SKE.TO",
+            {
+                "industry": "Other Industrial Metals & Mining",
+                "sector": "Basic Materials",
+                "longBusinessSummary": "Exploration and development stage company engaged in feasibility study and permitting of gold property.",
+                "totalRevenue": 0,
+                "operatingCashflow": -48000000,
+                "freeCashflow": -850000000,
+            },
+            "Developer",
+        ),
+        (
+            "WA1.AX",
+            "WA1.AX",
+            {
+                "industry": "Copper",
+                "sector": "Basic Materials",
+                "longBusinessSummary": "Junior exploration company drilling discovery targets.",
+                "totalRevenue": 0,
+                "operatingCashflow": -2000000,
+                "freeCashflow": -5000000,
+            },
+            "Junior Explorer",
+        ),
+        (
+            "NEM",
+            "NEM",
+            {
+                "industry": "Gold",
+                "sector": "Basic Materials",
+                "longBusinessSummary": "Engages in the production and exploration of gold mines.",
+                "totalRevenue": 15000000000,
+                "operatingCashflow": 12000000000,
+            },
+            "Producer",
+        ),
+        (
+            "AAPL",
+            "AAPL",
+            {"industry": "Consumer Electronics", "sector": "Technology"},
+            "Non-Mining",
+        ),
+        ("", "", {}, "N/A"),
+    ],
+)
+def test_determine_mining_lifecycle(orig, yahoo, info, expected_stage):
+    stage = determine_mining_lifecycle(orig, yahoo, info)
+    assert stage == expected_stage
+
+
+def test_calculate_cash_runway_positive_cashflow():
+    info = {
+        "totalCash": 500000000,
+        "totalDebt": 100000000,
+        "operatingCashflow": 300000000,
+        "freeCashflow": 200000000,
+        "marketCap": 2000000000,
+    }
+    res = calculate_cash_runway(info)
+    assert res["Annual Cash Burn"] == 0.0
+    assert pd.isna(res["Cash Runway (Mos)"])
+    assert res["Dilution Risk"] == "Low (Cash Flow +)"
+    assert res["Net Cash"] == 400000000
+    assert res["Net Cash Backing (%)"] == 20.0
+    assert res["Cash Backing (%)"] == 25.0
+
+
+def test_calculate_cash_runway_burning_cash_safe():
+    info = {
+        "totalCash": 100000000,
+        "totalDebt": 0,
+        "operatingCashflow": -10000000,
+        "freeCashflow": -20000000,
+        "marketCap": 200000000,
+    }
+    res = calculate_cash_runway(info)
+    # Annual burn = 20M, Cash = 100M -> 5 years = 60 months
+    assert res["Annual Cash Burn"] == 20000000.0
+    assert res["Cash Runway (Mos)"] == 60.0
+    assert res["Dilution Risk"] == "Low (> 36 mos)"
+    assert res["Net Cash Backing (%)"] == 50.0
+
+
+def test_calculate_cash_runway_moderate():
+    info = {
+        "totalCash": 25000000,
+        "totalDebt": 5000000,
+        "operatingCashflow": -15000000,
+        "freeCashflow": -20000000,
+        "marketCap": 100000000,
+    }
+    res = calculate_cash_runway(info)
+    # Burn = 20M, Cash = 25M -> 1.25 years = 15 months
+    assert res["Cash Runway (Mos)"] == 15.0
+    assert res["Dilution Risk"] == "Moderate (12–36 mos)"
+
+
+def test_calculate_cash_runway_high_dilution():
+    info = {
+        "totalCash": 5000000,
+        "totalDebt": 2000000,
+        "operatingCashflow": -10000000,
+        "freeCashflow": -12000000,
+        "marketCap": 30000000,
+    }
+    res = calculate_cash_runway(info)
+    # Burn = 12M, Cash = 5M -> 5/12 * 12 = 5 months
+    assert res["Cash Runway (Mos)"] == 5.0
+    assert res["Dilution Risk"] == "High (< 12 mos)"
+
+
+def test_calculate_cash_runway_empty():
+    res = calculate_cash_runway(None)
+    assert res["Dilution Risk"] == "N/A"
+    assert pd.isna(res["Cash Runway (Mos)"])
+
+
+def test_calculate_snowflake_scores_for_junior_explorer():
+    # Junior explorer with strong runway and net cash backing
+    metrics = {
+        "Mining Lifecycle": "Junior Explorer",
+        "P/E (KGV)": pd.NA,
+        "Valuation": "N/A",
+        "Target Upside (%)": 45.0,
+        "Recommendation": "strong buy",
+        "Trend": "STRONG BUY",
+        "52W High (%)": -10.0,
+        "Profit Margin (%)": pd.NA,
+        "Cash Runway (Mos)": 30.0,
+        "Net Cash": 50000000,
+        "Net Cash Backing (%)": 35.0,
+        "D/E Ratio": 0.05,
+        "Beta": 0.95,
+        "Dividend Yield (%)": pd.NA,
+    }
+    scores = calculate_snowflake_scores(metrics)
+    assert scores["Dividend"] == 0
+    assert scores["Value"] >= 4
+    assert scores["Future"] >= 4
+    assert scores["Past"] >= 4
+    assert scores["Health"] >= 5
+    assert scores["Total"] >= 17
+
+
+def test_buy_score_high_dilution_flag():
+    metrics = {
+        "Price": 1.0,
+        "Trend": "HOLD",
+        "Dilution Risk": "High (< 12 mos)",
+        "Cash Runway (Mos)": 4.0,
+        "Net Cash Backing (%)": 2.0,
+        "Target Upside (%)": 10.0,
+        "Recommendation": "Hold",
+    }
+    _, _, _, risks = _calculate_buy_score(metrics)
+    assert any("High Dilution Risk" in r for r in risks)

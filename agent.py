@@ -28,9 +28,7 @@ class OpenAIClient:
 
         self.client = openai.OpenAI(api_key=self.api_key, base_url=base_url)
 
-    def generate_response(
-        self, prompt: str, tools: list[dict[str, Any]]
-    ) -> Any:
+    def generate_response(self, prompt: str, tools: list[dict[str, Any]]) -> Any:
         """
         Generates a response from OpenAI by executing the chat completion.
 
@@ -43,9 +41,7 @@ class OpenAIClient:
         """
         # CRITICAL FIX: Map the verbose internal tool definitions (tools)
         # into the minimal, API-compliant structure required by the OpenAI client.
-        tools_def: Any = [
-            {"type": t["type"], "function": t["function"]} for t in tools
-        ]
+        tools_def: Any = [{"type": t["type"], "function": t["function"]} for t in tools]
 
         response = self.client.chat.completions.create(
             model="gpt-4o",

@@ -1,4 +1,4 @@
-# Financial Analysis App (v1.7.0)
+# Financial Analysis App (v1.8.0)
 
 A stock analysis application that fetches live data from Yahoo Finance, calculates key metrics, and lets you manage multiple watchlists/portfolios. Built with Streamlit (UI), FastAPI (REST API), and yfinance.
 
@@ -9,11 +9,15 @@ A stock analysis application that fetches live data from Yahoo Finance, calculat
 - **Portfolio management** — create multiple named watchlists, add/remove stocks, data persists across restarts
 - **Company search** — type a company name or ticker in the search box to find and add stocks; no need to know the exact symbol
 - **File import** — upload a `.txt` or `.csv` with company names, plain tickers, or prefixed tickers; the app resolves them automatically
-- **Metrics per stock** — Price, Currency, Price (EUR), SMA200, SMA50, RSI, P/E, Trend signal, Valuation, ATH/ATL, 52W High/Low %, Debt/Equity, Revenue Growth, Profit Margin, Beta, Sector, Business Model, Dividend Yield, Market Cap
-- **Business Model Categorization & Filtering** — Automatically distinguishes non-operating **Royalty & Streaming** companies (Franco-Nevada, Wheaton Precious Metals, Vox Royalties, Triple Flag, etc.) from **Operating Miners** and general operating companies, with interactive table filters.
+- **Metrics per stock** — Price, Currency, Price (EUR), SMA200, SMA50, RSI, P/E, Trend signal, Valuation, ATH/ATL, 52W High/Low %, Debt/Equity, Revenue Growth, Profit Margin, Beta, Sector, Business Model, Dividend Yield, Market Cap, Mining Lifecycle, Commodity, Cash Runway, Dilution Risk, Net Cash Backing %
+- **Simply Wall St 5-Pillar Snowflake Radar Chart** — Interactive polar visualization (Value, Future Growth, Past Performance, Financial Health, Dividend Sustainability; 0–30 score) embedded into opportunity dossiers and the charts tab
+- **Mining Lifecycle Classification (Lassonde Curve)** — Auto-classifies resource companies into **Junior Explorer**, **Developer**, **Producer**, or **Royalty & Streaming**, tailoring fundamental models for pre-revenue vs producing miners
+- **Commodity & Mineral Exposure Tagging** — Identifies primary exposure to **Precious Metals** (Gold, Silver, PGMs), **Critical & Energy Transition Metals** (Copper, Uranium, Lithium, Nickel, Cobalt, Rare Earths, Graphite), and Base/Industrial Metals
+- **Cash Runway & Dilution Risk Engine** — Calculates operating cash burn rate, months of cash runway, and net cash backing % of market cap for exploration companies, providing automated dilution risk alerts (`High (< 12 mos)` / `Moderate` / `Low`)
+- **Business Model Categorization & Interactive Filtering** — Multi-select filtering across Mining Lifecycle, Commodity, Dilution Risk, Business Model, and Sector
 - **Trend signals** — STRONG BUY / BULLISH / OVERBOUGHT / HOLD / OVERSOLD / BEARISH, based on dual SMA + RSI + P/E
 - **EUR conversion** — prices in non-EUR currencies (USD, GBp, CAD, etc.) are auto-converted using live FX rates
-- **Color-coded table** — trend, valuation, RSI, and 52W distance are highlighted for quick scanning
+- **Color-coded table** — trend, valuation, RSI, 52W distance, and progress bars are highlighted for quick scanning
 - **Optimized data representation** — automatic default formatting in the UI shortens decimal metrics to 2 digits after the separator (e.g. `1.20` instead of `1.200000`), while displaying Target Upside as a clean whole integer percentage without decimal separator
 - **Clean logging & diagnostics** — built-in suppression of upstream third-party deprecation warnings (`yfinance` / `pandas`), structured logging, and full `ruff` lint compliance
 - **Interactive charts** — candlestick price chart with SMA200, SMA50, and RSI subplot per stock

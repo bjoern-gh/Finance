@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.0] - 2026-11-12
+
+### Added
+- **Simply Wall St Style Snowflake Radar Chart**:
+  - Implemented `build_snowflake_radar` rendering interactive 5-pillar polar charts (Value, Future Growth, Past Performance, Financial Health, Dividend Sustainability; 0–30 scale).
+  - Integrated radar charts into Opportunity Dossiers and single-stock fundamentals view in the Charts tab.
+  - Added Streamlit progress bar column configuration for Snowflake score in the main analysis table.
+- **Lassonde Curve Mining Lifecycle Classifier**:
+  - Added `determine_mining_lifecycle` auto-classifying companies into `Junior Explorer`, `Developer`, `Producer`, `Royalty & Streaming`, and `Non-Mining`.
+  - Recalibrated Snowflake scores for pre-revenue and early-stage resource companies: assesses Cash Runway and Net Cash surplus instead of penalizing absent earnings or dividends.
+- **Primary Commodity & Mineral Exposure Engine**:
+  - Added `determine_primary_commodity` classifying exposure to Precious Metals (Gold, Silver, PGMs), Critical & Energy Transition Metals (Copper, Uranium, Lithium, Nickel, Cobalt, Rare Earths, Graphite), and Base/Industrial Metals.
+- **Cash Runway & Dilution Risk Engine**:
+  - Added `calculate_cash_runway` tracking cash reserves, annual cash burn, months of runway, dilution risk levels (`Low (Cash Flow +)`, `Low (> 36 mos)`, `Moderate (12–36 mos)`, `High (< 12 mos)`), and Net Cash Backing % of market cap.
+  - Integrated automated `⚠️ High Dilution Risk` warnings into the composite Buy Score engine for explorers with < 12 months runway.
+- **Interactive Multi-Dimension Filtering & Badges**:
+  - Added multi-select filters for Mining Lifecycle, Commodity, and Dilution Risk in the analysis tab.
+  - Added Material Symbol badges (`:material/terrain:`, `:material/diamond:`, `:material/warning:`, `:material/savings:`) to opportunity dossiers and charts view.
+
+---
+
 ## [1.7.0] - 2026-11-04
 
 ### Added

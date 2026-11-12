@@ -47,6 +47,11 @@ def test_get_column_config():
             "52W High (%)": [-5.12, -12.34],
             "Custom Float": [3.1415, 2.7182],
             "Custom Int": [1, 2],
+            "Cash Runway (Mos)": [18, 6],
+            "Net Cash Backing (%)": [24.5, 5.0],
+            "Mining Lifecycle": ["Junior Explorer", "Producer"],
+            "Commodity": ["Gold", "Copper"],
+            "Dilution Risk": ["Moderate (12–36 mos)", "Low (> 36 mos)"],
             "Market Cap": ["2.50T", "45.6M"],
             "Valuation": ["Fair", "Cheap"],
         }
@@ -69,6 +74,13 @@ def test_get_column_config():
     # Snowflake progress column
     assert cfg["Snowflake Score"]["type_config"]["type"] == "progress"
     assert cfg["Snowflake Score"]["type_config"]["max_value"] == 30
+
+    # Mining & Cash Runway column configurations
+    assert cfg["Cash Runway (Mos)"]["type_config"]["format"] == "%.0f mos"
+    assert cfg["Net Cash Backing (%)"]["type_config"]["format"] == "%.1f%%"
+    assert cfg["Mining Lifecycle"]["type_config"]["type"] == "text"
+    assert cfg["Commodity"]["type_config"]["type"] == "text"
+    assert cfg["Dilution Risk"]["type_config"]["type"] == "text"
 
     # Non-numeric columns should not have number config
     assert "Company" not in cfg

@@ -647,6 +647,282 @@ def determine_business_model(
     return "N/A"
 
 
+def determine_primary_commodity(info: dict | None = None) -> dict[str, str]:
+    """
+    Detect primary commodity and broad commodity category from industry, sector,
+    and business description.
+    """
+    if not isinstance(info, dict) or not info:
+        return {"Commodity": "N/A", "Commodity Category": "N/A"}
+
+    industry = (info.get("industry") or "").lower().strip()
+    sector = (info.get("sector") or "").lower().strip()
+    summary = (info.get("longBusinessSummary") or "").lower()
+    name = (info.get("longName") or info.get("shortName") or "").lower()
+    text = f"{industry} {name} {summary}"
+
+    # 1. Precious Metals
+    if "gold" in industry or re.search(r"\bgold\b", text):
+        return {"Commodity": "Gold", "Commodity Category": "Precious Metals"}
+    if "silver" in industry or re.search(r"\bsilver\b", text):
+        return {"Commodity": "Silver", "Commodity Category": "Precious Metals"}
+    if re.search(r"\b(platinum|palladium|pgm|rhodium)\b", text):
+        return {"Commodity": "PGM", "Commodity Category": "Precious Metals"}
+
+    # 2. Critical & Energy Transition Metals
+    if "uranium" in industry or re.search(r"\b(uranium|u3o8|yellowcake)\b", text):
+        return {"Commodity": "Uranium", "Commodity Category": "Critical Metals"}
+    if "copper" in industry or re.search(r"\bcopper\b", text):
+        return {"Commodity": "Copper", "Commodity Category": "Critical Metals"}
+    if re.search(r"\b(lithium|spodumene|brine)\b", text):
+        return {"Commodity": "Lithium", "Commodity Category": "Critical Metals"}
+    if re.search(r"\bnickel\b", text):
+        return {"Commodity": "Nickel", "Commodity Category": "Critical Metals"}
+    if re.search(r"\bcobalt\b", text):
+        return {"Commodity": "Cobalt", "Commodity Category": "Critical Metals"}
+    if re.search(r"\b(rare earth|ree|neodymium|praseodymium|dysprosium)\b", text):
+        return {"Commodity": "Rare Earths", "Commodity Category": "Critical Metals"}
+    if re.search(r"\bgraphite\b", text):
+        return {"Commodity": "Graphite", "Commodity Category": "Critical Metals"}
+
+    # 3. Base & Industrial Metals
+    if "aluminum" in industry or re.search(r"\b(aluminum|bauxite)\b", text):
+        return {"Commodity": "Aluminum", "Commodity Category": "Base Metals"}
+    if re.search(r"\b(iron ore|hematite|magnetite|iron ore pellet)\b", text):
+        return {"Commodity": "Iron Ore", "Commodity Category": "Base Metals"}
+    if re.search(r"\b(zinc|lead)\b", text):
+        return {"Commodity": "Zinc & Lead", "Commodity Category": "Base Metals"}
+    if "steel" in industry or re.search(r"\bsteel\b", text):
+        return {"Commodity": "Steel", "Commodity Category": "Base Metals"}
+
+    # 4. Energy & Bulks
+    if "coal" in industry or re.search(
+        r"\b(thermal coal|metallurgical coal|coking coal)\b", text
+    ):
+        return {"Commodity": "Coal", "Commodity Category": "Bulks & Energy"}
+    if re.search(r"\b(potash|phosphate|fertilizer)\b", text):
+        return {
+            "Commodity": "Fertilizers / Potash",
+            "Commodity Category": "Bulks & Energy",
+        }
+
+    # 5. Generic mining / resources
+    if (
+        sector in ["basic materials", "energy"]
+        or "mining" in industry
+        or "metals" in industry
+        or "mineral" in text
+    ):
+        return {
+            "Commodity": "Diversified Mining",
+            "Commodity Category": "Diversified Resources",
+        }
+
+    return {"Commodity": "Non-Resource", "Commodity Category": "Non-Resource"}
+
+
+def determine_mining_lifecycle(
+    original_ticker: str = "",
+    yahoo_symbol: str = "",
+    info: dict | None = None,
+    business_model: str | None = None,
+) -> str:
+    """
+    Determine the mining lifecycle stage along the Lassonde Curve:
+    - 'Royalty & Streaming': Non-operating capital providers receiving NSR / streams.
+    - 'Junior Explorer': Pre-revenue or exploration/drilling stage.
+    - 'Developer': Feasibility, permitting, or mine construction stage.
+    - 'Producer': Active commercial mining with meaningful revenue or operating cashflow.
+    - 'Non-Mining': Companies outside Basic Materials / Mining.
+    - 'N/A': Missing metadata.
+    """
+    if info is None:
+        info = {}
+
+    if business_model is None:
+        business_model = determine_business_model(original_ticker, yahoo_symbol, info)
+
+    if business_model == "Royalty & Streaming":
+        return "Royalty & Streaming"
+
+    industry = (info.get("industry") or "").lower()
+    sector = (info.get("sector") or "").lower()
+    summary = (info.get("longBusinessSummary") or "").lower()
+    name = (info.get("longName") or info.get("shortName") or "").lower()
+
+    is_resource = (
+        business_model == "Operating Miner"
+        or sector in ["basic materials", "energy"]
+        or any(
+            k in industry
+            for k in ["mining", "metals", "gold", "silver", "copper", "uranium"]
+        )
+        or any(
+            k in name
+            for k in [
+                "gold",
+                "silver",
+                "mining",
+                "minerals",
+                "resources",
+                "metals",
+                "exploration",
+            ]
+        )
+    )
+
+    if not is_resource:
+        return "Non-Mining" if (sector or industry or name) else "N/A"
+
+    rev = info.get("totalRevenue")
+    ocf = info.get("operatingCashflow")
+    fcf = info.get("freeCashflow")
+
+    # Has significant commercial revenue (> $25M) or high positive OCF (> $10M)
+    has_commercial_production = (
+        isinstance(rev, (int, float)) and rev >= 25_000_000
+    ) or (isinstance(ocf, (int, float)) and ocf >= 10_000_000)
+
+    # Keywords indicative of developers
+    developer_keywords = [
+        "development stage",
+        "under development",
+        "feasibility study",
+        "pre-feasibility",
+        "preliminary economic assessment",
+        "definitive feasibility",
+        "construction of",
+        "mine construction",
+        "permitting phase",
+        "mine development",
+        "in-construction",
+    ]
+    is_dev_text = any(kw in summary for kw in developer_keywords)
+
+    # Keywords indicative of junior exploration
+    explorer_keywords = [
+        "exploration stage",
+        "exploration company",
+        "exploration and evaluation",
+        "mineral exploration",
+        "exploration of mineral properties",
+        "prospecting",
+        "drill program",
+        "drilling program",
+        "early stage exploration",
+        "greenfield",
+    ]
+    is_exp_text = any(kw in summary for kw in explorer_keywords)
+
+    if has_commercial_production and not is_dev_text:
+        return "Producer"
+
+    if is_dev_text or (
+        isinstance(fcf, (int, float))
+        and fcf < -50_000_000
+        and not has_commercial_production
+    ):
+        return "Developer"
+
+    if (
+        is_exp_text
+        or (isinstance(rev, (int, float)) and rev < 10_000_000)
+        or rev is None
+        or rev == 0
+    ):
+        return "Junior Explorer"
+
+    if has_commercial_production:
+        return "Producer"
+
+    return "Developer" if is_dev_text else "Junior Explorer"
+
+
+def calculate_cash_runway(info: dict | None = None) -> dict[str, Any]:
+    """
+    Calculate cash reserves, annual cash burn rate, cash runway (months),
+    dilution risk, and cash backing percentages.
+    """
+    _empty = {
+        "Total Cash": pd.NA,
+        "Total Debt": pd.NA,
+        "Net Cash": pd.NA,
+        "Annual Cash Burn": pd.NA,
+        "Cash Runway (Mos)": pd.NA,
+        "Dilution Risk": "N/A",
+        "Cash Backing (%)": pd.NA,
+        "Net Cash Backing (%)": pd.NA,
+    }
+    if not isinstance(info, dict) or not info:
+        return _empty
+
+    cash = info.get("totalCash")
+    debt = info.get("totalDebt")
+    ocf = info.get("operatingCashflow")
+    fcf = info.get("freeCashflow")
+    mcap = info.get("marketCap")
+
+    cash_val = (
+        float(cash) if isinstance(cash, (int, float)) and not pd.isna(cash) else None
+    )
+    debt_val = (
+        float(debt) if isinstance(debt, (int, float)) and not pd.isna(debt) else 0.0
+    )
+
+    net_cash_val = (cash_val - debt_val) if cash_val is not None else None
+
+    # Calculate annual cash burn
+    annual_burn = None
+    if isinstance(fcf, (int, float)) and fcf < 0:
+        annual_burn = abs(float(fcf))
+    elif isinstance(ocf, (int, float)) and ocf < 0:
+        annual_burn = abs(float(ocf))
+    elif (isinstance(fcf, (int, float)) and fcf >= 0) or (
+        isinstance(ocf, (int, float)) and ocf >= 0
+    ):
+        annual_burn = 0.0
+
+    # Cash runway in months
+    runway_mos = pd.NA
+    dilution_risk = "N/A"
+
+    if annual_burn is not None:
+        if annual_burn == 0.0:
+            dilution_risk = "Low (Cash Flow +)"
+        elif cash_val is not None and cash_val > 0:
+            months = round((cash_val / annual_burn) * 12, 1)
+            runway_mos = months
+            if months >= 36.0:
+                dilution_risk = "Low (> 36 mos)"
+            elif months >= 12.0:
+                dilution_risk = "Moderate (12–36 mos)"
+            else:
+                dilution_risk = "High (< 12 mos)"
+        else:
+            runway_mos = 0.0
+            dilution_risk = "High (< 12 mos)"
+
+    # Cash backing % of market cap
+    cash_backing_pct = pd.NA
+    net_cash_backing_pct = pd.NA
+    if isinstance(mcap, (int, float)) and mcap > 0:
+        if cash_val is not None:
+            cash_backing_pct = round((cash_val / mcap) * 100, 1)
+        if net_cash_val is not None:
+            net_cash_backing_pct = round((net_cash_val / mcap) * 100, 1)
+
+    return {
+        "Total Cash": cash_val if cash_val is not None else pd.NA,
+        "Total Debt": debt_val if debt is not None else pd.NA,
+        "Net Cash": net_cash_val if net_cash_val is not None else pd.NA,
+        "Annual Cash Burn": annual_burn if annual_burn is not None else pd.NA,
+        "Cash Runway (Mos)": runway_mos,
+        "Dilution Risk": dilution_risk,
+        "Cash Backing (%)": cash_backing_pct,
+        "Net Cash Backing (%)": net_cash_backing_pct,
+    }
+
+
 def _get_optional_metrics(
     info: dict,
     include_dividend: bool | None = None,
@@ -654,7 +930,7 @@ def _get_optional_metrics(
     original_ticker: str = "",
     yahoo_symbol: str = "",
 ) -> dict:
-    """Fetch optional metrics: dividend yield, market cap, D/E, growth, margin, beta, sector, business model."""
+    """Fetch optional metrics: dividend yield, market cap, D/E, growth, margin, beta, sector, business model, lifecycle, commodity, cash runway."""
     result = {}
 
     # Use provided flags if given, otherwise fall back to module-level defaults
@@ -691,9 +967,22 @@ def _get_optional_metrics(
     result["Sector"] = info.get("sector", "N/A") or "N/A"
 
     # Business Model
-    result["Business Model"] = determine_business_model(
-        original_ticker, yahoo_symbol, info
+    biz_model = determine_business_model(original_ticker, yahoo_symbol, info)
+    result["Business Model"] = biz_model
+
+    # Mining & Resource Taxonomy
+    lifecycle = determine_mining_lifecycle(
+        original_ticker, yahoo_symbol, info, business_model=biz_model
     )
+    result["Mining Lifecycle"] = lifecycle
+
+    comm_info = determine_primary_commodity(info)
+    result["Commodity"] = comm_info["Commodity"]
+    result["Commodity Category"] = comm_info["Commodity Category"]
+
+    # Simply Wall St style Cash Runway & Dilution Risk
+    runway_data = calculate_cash_runway(info)
+    result.update(runway_data)
 
     return result
 
@@ -895,6 +1184,31 @@ def _calculate_buy_score(metrics: dict) -> tuple[int, str, list[str], list[str]]
             )
             score = max(0, score - 20)
 
+    # ── Mining & Dilution Risk Adjustments ──
+    dilution = str(metrics.get("Dilution Risk", ""))
+    runway = metrics.get("Cash Runway (Mos)")
+    net_cash_pct = metrics.get("Net Cash Backing (%)")
+
+    if dilution.startswith("High"):
+        if isinstance(runway, (int, float)) and not pd.isna(runway):
+            risks.insert(
+                0, f"⚠️ High Dilution Risk: Cash runway < 12 mos ({runway:.0f} mos)"
+            )
+        else:
+            risks.insert(0, "⚠️ High Dilution Risk: Cash runway < 12 mos")
+        score = max(0, score - 15)
+    elif isinstance(runway, (int, float)) and not pd.isna(runway) and runway >= 24.0:
+        strengths.append(f"Strong cash runway ({runway:.0f} mos)")
+
+    if (
+        isinstance(net_cash_pct, (int, float))
+        and not pd.isna(net_cash_pct)
+        and net_cash_pct >= 20.0
+    ):
+        strengths.append(
+            f"Significant net cash backing ({net_cash_pct:.1f}% of market cap)"
+        )
+
     # Overall Opportunity Rating
     if is_value_trap:
         rating = "Value Trap Risk"
@@ -913,21 +1227,124 @@ def _calculate_buy_score(metrics: dict) -> tuple[int, str, list[str], list[str]]
 def calculate_snowflake_scores(metrics: dict) -> dict[str, Any]:
     """
     Calculate 5-pillar Simply Wall St style scores (0-6 each):
-    - Value (0-6): P/E multiple, PEG/Valuation status, and Target Upside.
+    - Value (0-6): P/E multiple, PEG/Valuation status, Net Cash Backing, and Target Upside.
     - Future (0-6): Revenue growth, consensus recommendation, and analyst upside.
     - Past (0-6): Operating profit margins, dual-SMA trend momentum, and 52W high proximity.
-    - Health (0-6): Balance sheet leverage (D/E), operating profitability, and market beta.
+    - Health (0-6): Balance sheet leverage (D/E), Cash Runway (for explorers), operating profitability, and beta.
     - Dividend (0-6): Dividend yield and payout sustainability from net margin.
     Total: 0-30 points.
     """
     scores = {"Value": 0, "Future": 0, "Past": 0, "Health": 0, "Dividend": 0}
 
-    # ── 1. Value (0-6) ──
-    v_pts = 0
+    lifecycle = str(metrics.get("Mining Lifecycle", ""))
     pe = metrics.get("P/E (KGV)")
     val = str(metrics.get("Valuation", ""))
     upside = metrics.get("Target Upside (%)")
+    rev_growth = metrics.get("Revenue Growth (%)")
+    rec = str(metrics.get("Recommendation", "")).lower()
+    margin = metrics.get("Profit Margin (%)")
+    trend = str(metrics.get("Trend", ""))
+    w52_high = metrics.get("52W High (%)")
+    biz_model = str(metrics.get("Business Model", ""))
+    de = metrics.get("D/E Ratio")
+    beta = metrics.get("Beta")
+    div_yield = metrics.get("Dividend Yield (%)")
 
+    # ── Tailored evaluation for pre-revenue Junior Explorers & Developers ──
+    if lifecycle in ["Junior Explorer", "Developer"]:
+        # 1. Value (0-6): Net Cash backing & Target Upside
+        v_pts = 0
+        net_cash_pct = metrics.get("Net Cash Backing (%)")
+        if isinstance(net_cash_pct, (int, float)) and not pd.isna(net_cash_pct):
+            if net_cash_pct >= 25.0:
+                v_pts += 3
+            elif net_cash_pct >= 10.0:
+                v_pts += 2
+            elif net_cash_pct > 0:
+                v_pts += 1
+
+        if isinstance(upside, (int, float)) and not pd.isna(upside):
+            if upside >= 30.0:
+                v_pts += 2
+            elif upside >= 15.0:
+                v_pts += 1
+
+        if "Cheap" in val:
+            v_pts += 1
+        scores["Value"] = min(6, v_pts)
+
+        # 2. Future (0-6): Discovery potential, Analyst Target Upside & Recommendation
+        f_pts = 0
+        if isinstance(upside, (int, float)) and not pd.isna(upside):
+            if upside >= 35.0:
+                f_pts += 3
+            elif upside >= 15.0:
+                f_pts += 2
+            elif upside > 0:
+                f_pts += 1
+
+        if any(k in rec for k in ["strong buy", "buy"]):
+            f_pts += 2
+        elif "hold" in rec:
+            f_pts += 1
+
+        if trend in ["STRONG BUY", "BULLISH"]:
+            f_pts += 1
+        scores["Future"] = min(6, f_pts)
+
+        # 3. Past / Momentum (0-6): Dual-SMA trend alignment & 52W high proximity
+        p_pts = 0
+        if trend in ["STRONG BUY", "BULLISH"]:
+            p_pts += 3
+        elif trend == "HOLD":
+            p_pts += 1
+
+        if isinstance(w52_high, (int, float)) and not pd.isna(w52_high):
+            if w52_high >= -15.0:
+                p_pts += 2
+            elif w52_high >= -35.0:
+                p_pts += 1
+
+        if isinstance(margin, (int, float)) and not pd.isna(margin) and margin > 0:
+            p_pts += 1
+        scores["Past"] = min(6, p_pts)
+
+        # 4. Financial Health (0-6): Cash Runway, Net Cash & Low Debt Overhang
+        h_pts = 0
+        runway = metrics.get("Cash Runway (Mos)")
+        dilution_r = str(metrics.get("Dilution Risk", ""))
+        if isinstance(runway, (int, float)) and not pd.isna(runway):
+            if runway >= 24.0:
+                h_pts += 3
+            elif runway >= 12.0:
+                h_pts += 2
+            elif runway >= 6.0:
+                h_pts += 1
+        elif "Cash Flow +" in dilution_r:
+            h_pts += 3
+
+        net_cash = metrics.get("Net Cash")
+        if (
+            isinstance(net_cash, (int, float))
+            and not pd.isna(net_cash)
+            and net_cash > 0
+        ):
+            h_pts += 2
+
+        if isinstance(de, (int, float)) and not pd.isna(de) and de <= 0.3:
+            h_pts += 1
+        if isinstance(beta, (int, float)) and not pd.isna(beta) and beta <= 1.2:
+            h_pts += 1
+        scores["Health"] = min(6, h_pts)
+
+        # 5. Dividend (0-6): 0 for early stage exploration/development
+        scores["Dividend"] = 0
+        scores["Total"] = sum(scores.values())
+        return scores
+
+    # ── Standard evaluation for Producers, Royalty & Operating Companies ──
+    # ── 1. Value (0-6) ──
+    v_pts = 0
     if "Cheap" in val:
         v_pts += 3
     elif "Fair" in val:
@@ -949,9 +1366,6 @@ def calculate_snowflake_scores(metrics: dict) -> dict[str, Any]:
 
     # ── 2. Future Growth (0-6) ──
     f_pts = 0
-    rev_growth = metrics.get("Revenue Growth (%)")
-    rec = str(metrics.get("Recommendation", "")).lower()
-
     if isinstance(rev_growth, (int, float)) and not pd.isna(rev_growth):
         if rev_growth >= 20:
             f_pts += 3
@@ -971,12 +1385,6 @@ def calculate_snowflake_scores(metrics: dict) -> dict[str, Any]:
 
     # ── 3. Past Performance (0-6) ──
     p_pts = 0
-    margin = metrics.get("Profit Margin (%)")
-    trend = str(metrics.get("Trend", ""))
-    w52_high = metrics.get("52W High (%)")
-    biz_model = str(metrics.get("Business Model", ""))
-
-    # Royalty models naturally enjoy 60-80% margins, general miners/companies 15-20%
     margin_threshold = 40.0 if biz_model == "Royalty & Streaming" else 15.0
     if isinstance(margin, (int, float)) and not pd.isna(margin):
         if margin >= margin_threshold:
@@ -997,11 +1405,7 @@ def calculate_snowflake_scores(metrics: dict) -> dict[str, Any]:
 
     # ── 4. Financial Health (0-6) ──
     h_pts = 0
-    de = metrics.get("D/E Ratio")
-    beta = metrics.get("Beta")
-
     if biz_model == "Royalty & Streaming":
-        # Royalty companies typically carry little to no debt & minimal capex
         h_pts += 3
     elif isinstance(de, (int, float)) and not pd.isna(de):
         if de <= 0.4:
@@ -1020,7 +1424,6 @@ def calculate_snowflake_scores(metrics: dict) -> dict[str, Any]:
 
     # ── 5. Dividend (0-6) ──
     d_pts = 0
-    div_yield = metrics.get("Dividend Yield (%)")
     if isinstance(div_yield, (int, float)) and not pd.isna(div_yield) and div_yield > 0:
         if div_yield >= 4.0:
             d_pts += 4
@@ -1078,6 +1481,17 @@ def get_financial_metrics(ticker_tuple: tuple[str, str]) -> dict:
         "Beta": pd.NA,
         "Sector": "N/A",
         "Business Model": "N/A",
+        "Mining Lifecycle": "N/A",
+        "Commodity": "N/A",
+        "Commodity Category": "N/A",
+        "Total Cash": pd.NA,
+        "Total Debt": pd.NA,
+        "Net Cash": pd.NA,
+        "Annual Cash Burn": pd.NA,
+        "Cash Runway (Mos)": pd.NA,
+        "Dilution Risk": "N/A",
+        "Cash Backing (%)": pd.NA,
+        "Net Cash Backing (%)": pd.NA,
         "Key Strengths": "",
         "Key Risks": "",
     }
@@ -1170,7 +1584,13 @@ def get_financial_metrics(ticker_tuple: tuple[str, str]) -> dict:
             trend = _determine_trend_status(
                 curr_p, sma200, sma50, rsi_for_trend, pe_v, kgv_max
             )
-            optional = _get_optional_metrics(info, include_dividend, include_marketcap)
+            optional = _get_optional_metrics(
+                info,
+                include_dividend,
+                include_marketcap,
+                original_ticker,
+                yahoo_symbol,
+            )
             w52 = _get_52w_metrics(info, curr_p)
             analyst = _get_analyst_metrics(info, curr_p)
 
@@ -1188,6 +1608,7 @@ def get_financial_metrics(ticker_tuple: tuple[str, str]) -> dict:
             snowflake_metrics = {
                 **interim,
                 "Business Model": optional.get("Business Model", ""),
+                "Mining Lifecycle": optional.get("Mining Lifecycle", ""),
             }
             snowflake = calculate_snowflake_scores(snowflake_metrics)
 

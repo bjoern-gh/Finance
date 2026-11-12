@@ -29,6 +29,7 @@ except ImportError:
 import portfolio_manager as pm
 from financial_analyzer import (
     analyze_tickers,
+    format_large_number,
     get_financial_metrics,
     get_price_history,
     parse_and_convert_tickers,
@@ -246,10 +247,6 @@ def get_column_config(df: pd.DataFrame) -> dict:
             config[col] = st.column_config.NumberColumn(format="%.0f%%")
             continue
 
-        if col in KNOWN_FLOAT_COLUMNS:
-            config[col] = st.column_config.NumberColumn(format="%.2f")
-            continue
-
         if col == "Buy Score":
             config[col] = st.column_config.NumberColumn(format="%.0f")
             continue
@@ -262,6 +259,37 @@ def get_column_config(df: pd.DataFrame) -> dict:
                 min_value=0,
                 max_value=30,
             )
+            continue
+
+        if col == "Cash Runway (Mos)":
+            config[col] = st.column_config.NumberColumn(
+                "Cash Runway",
+                help="Months of operational cash runway based on cash reserves and annual cash burn",
+                format="%.0f mos",
+            )
+            continue
+
+        if col in ["Net Cash Backing (%)", "Cash Backing (%)"]:
+            config[col] = st.column_config.NumberColumn(
+                col.replace(" (%)", ""),
+                help="Cash reserves as a percentage of Market Cap",
+                format="%.1f%%",
+            )
+            continue
+
+        if col in [
+            "Mining Lifecycle",
+            "Commodity",
+            "Commodity Category",
+            "Dilution Risk",
+        ]:
+            config[col] = st.column_config.TextColumn(
+                col,
+            )
+            continue
+
+        if col in KNOWN_FLOAT_COLUMNS:
+            config[col] = st.column_config.NumberColumn(format="%.2f")
             continue
 
         # Automatic detection for any other numeric column
@@ -575,6 +603,85 @@ def build_snowflake_radar(
         height=260,
     )
     return fig
+
+
+def render_resource_badges_and_metrics(row: dict):
+    """Render Simply Wall St / Mining lifecycle badges and cash runway metrics if applicable."""
+    badge_parts = []
+    lifecycle_val = row.get("Mining Lifecycle")
+    if pd.notna(lifecycle_val) and lifecycle_val not in ["N/A", "Non-Mining"]:
+        if lifecycle_val == "Junior Explorer":
+            badge_parts.append(":violet-badge[:material/terrain: Junior Explorer]")
+        elif lifecycle_val == "Developer":
+            badge_parts.append(":blue-badge[:material/construction: Developer]")
+        elif lifecycle_val == "Producer":
+            badge_parts.append(":green-badge[:material/factory: Producer]")
+        elif lifecycle_val == "Royalty & Streaming":
+            badge_parts.append(
+                ":orange-badge[:material/handshake: Royalty & Streaming]"
+            )
+
+    commodity_val = row.get("Commodity")
+    if pd.notna(commodity_val) and commodity_val not in ["N/A", "Non-Resource"]:
+        cat_val = row.get("Commodity Category", "")
+        cat_txt = f" ({cat_val})" if cat_val and cat_val != "N/A" else ""
+        badge_parts.append(
+            f":yellow-badge[:material/diamond: {commodity_val}{cat_txt}]"
+        )
+
+    dilution_val = row.get("Dilution Risk")
+    if pd.notna(dilution_val) and dilution_val != "N/A":
+        if "High" in str(dilution_val):
+            badge_parts.append(
+                f":red-badge[:material/warning: Dilution: {dilution_val}]"
+            )
+        elif "Moderate" in str(dilution_val):
+            badge_parts.append(
+                f":orange-badge[:material/timelapse: Dilution: {dilution_val}]"
+            )
+        elif "Low" in str(dilution_val):
+            badge_parts.append(
+                f":green-badge[:material/shield: Dilution: {dilution_val}]"
+            )
+
+    net_cash_pct = row.get("Net Cash Backing (%)")
+    if (
+        pd.notna(net_cash_pct)
+        and isinstance(net_cash_pct, (int, float))
+        and net_cash_pct > 15.0
+    ):
+        badge_parts.append(
+            f":green-badge[:material/savings: Net Cash: {net_cash_pct:.1f}% of Cap]"
+        )
+
+    if badge_parts:
+        st.markdown(" ".join(badge_parts))
+
+    runway_val = row.get("Cash Runway (Mos)")
+    if pd.notna(runway_val) or (
+        pd.notna(lifecycle_val) and lifecycle_val in ["Junior Explorer", "Developer"]
+    ):
+        cr1, cr2, cr3, cr4 = st.columns(4)
+        runway_str = (
+            f"{float(runway_val):.0f} mos"
+            if pd.notna(runway_val)
+            else ("Self-Funded" if "Cash Flow +" in str(dilution_val) else "N/A")
+        )
+        cr1.metric("Cash runway", runway_str)
+        cr2.metric(
+            "Dilution risk", str(dilution_val) if pd.notna(dilution_val) else "N/A"
+        )
+        cr3.metric(
+            "Net cash backing",
+            f"{float(net_cash_pct):.1f}%" if pd.notna(net_cash_pct) else "N/A",
+        )
+        burn_val = row.get("Annual Cash Burn")
+        burn_str = (
+            f"${format_large_number(burn_val)}"
+            if pd.notna(burn_val) and burn_val > 0
+            else ("Cash +" if "Cash Flow +" in str(dilution_val) else "N/A")
+        )
+        cr4.metric("Annual burn", burn_str)
 
 
 # ── Import parser ─────────────────────────────────────────────────────────────
@@ -1100,10 +1207,15 @@ def render_analysis_results(
             "Company",
             "Yahoo Symbol",
             "Business Model",
+            "Mining Lifecycle",
+            "Commodity",
             "Buy Score",
             "Snowflake Score",
             "Opportunity Rating",
             "Target Upside (%)",
+            "Cash Runway (Mos)",
+            "Dilution Risk",
+            "Net Cash Backing (%)",
             "Recommendation",
             "Price",
             "Currency",
@@ -1129,14 +1241,88 @@ def render_analysis_results(
 
         # ── Interactive Filter Controls ──
         view_df = success_df.copy()
-        if "Business Model" in success_df.columns or "Sector" in success_df.columns:
+        has_lifecycle = "Mining Lifecycle" in success_df.columns
+        has_commodity = "Commodity" in success_df.columns
+        has_dilution = "Dilution Risk" in success_df.columns
+        has_model = "Business Model" in success_df.columns
+
+        if (
+            has_lifecycle
+            or has_commodity
+            or has_dilution
+            or has_model
+            or "Sector" in success_df.columns
+        ):
             with st.expander(
-                ":material/filter_list: Filter options (business model & sector)",
+                ":material/filter_list: Filter options (Mining lifecycle, commodity, dilution & sector)",
                 expanded=False,
             ):
-                f1, f2 = st.columns(2)
+                f1, f2, f3, f4 = st.columns(4)
 
-                if "Business Model" in success_df.columns:
+                if has_lifecycle:
+                    avail_lifecycles = sorted(
+                        [
+                            m
+                            for m in success_df["Mining Lifecycle"].unique()
+                            if m and m != "N/A"
+                        ]
+                    )
+                    if avail_lifecycles:
+                        selected_lifecycles = f1.multiselect(
+                            "Mining lifecycle:",
+                            options=avail_lifecycles,
+                            default=avail_lifecycles,
+                            help="Filter by Lassonde curve stage: Junior Explorer, Developer, Producer, Royalty & Streaming",
+                        )
+                        if selected_lifecycles:
+                            view_df = view_df[
+                                view_df["Mining Lifecycle"].isin(selected_lifecycles)
+                                | (view_df["Mining Lifecycle"] == "N/A")
+                            ]
+
+                if has_commodity:
+                    avail_commodities = sorted(
+                        [
+                            c
+                            for c in success_df["Commodity"].unique()
+                            if c and c not in ("N/A", "Non-Resource")
+                        ]
+                    )
+                    if avail_commodities:
+                        selected_commodities = f2.multiselect(
+                            "Commodity / Mineral:",
+                            options=avail_commodities,
+                            default=avail_commodities,
+                            help="Filter by primary resource: Gold, Silver, Copper, Uranium, Lithium, etc.",
+                        )
+                        if selected_commodities:
+                            view_df = view_df[
+                                view_df["Commodity"].isin(selected_commodities)
+                                | (view_df["Commodity"].isin(["N/A", "Non-Resource"]))
+                            ]
+
+                if has_dilution:
+                    avail_dilution = sorted(
+                        [
+                            d
+                            for d in success_df["Dilution Risk"].unique()
+                            if d and d != "N/A"
+                        ]
+                    )
+                    if avail_dilution:
+                        selected_dilution = f3.multiselect(
+                            "Dilution risk:",
+                            options=avail_dilution,
+                            default=avail_dilution,
+                            help="Filter by cash runway risk: High (< 12 mos), Moderate (12–36 mos), Low (> 36 mos)",
+                        )
+                        if selected_dilution:
+                            view_df = view_df[
+                                view_df["Dilution Risk"].isin(selected_dilution)
+                                | (view_df["Dilution Risk"] == "N/A")
+                            ]
+
+                if has_model:
                     avail_models = sorted(
                         [
                             m
@@ -1145,8 +1331,8 @@ def render_analysis_results(
                         ]
                     )
                     if avail_models:
-                        selected_models = f1.multiselect(
-                            "Filter business model:",
+                        selected_models = f4.multiselect(
+                            "Business model:",
                             options=avail_models,
                             default=avail_models,
                             help="Filter between Royalty & Streaming, Operating Miner, and Operating Company",
@@ -1155,23 +1341,6 @@ def render_analysis_results(
                             view_df = view_df[
                                 view_df["Business Model"].isin(selected_models)
                                 | (view_df["Business Model"] == "N/A")
-                            ]
-
-                if "Sector" in success_df.columns:
-                    avail_sectors = sorted(
-                        [s for s in success_df["Sector"].unique() if s and s != "N/A"]
-                    )
-                    if avail_sectors:
-                        selected_sectors = f2.multiselect(
-                            "Filter sector:",
-                            options=avail_sectors,
-                            default=avail_sectors,
-                            help="Filter by company sector",
-                        )
-                        if selected_sectors:
-                            view_df = view_df[
-                                view_df["Sector"].isin(selected_sectors)
-                                | (view_df["Sector"] == "N/A")
                             ]
 
         # ── Smart Buying Opportunities Filter ──
@@ -1298,57 +1467,65 @@ def render_analysis_results(
                                         f"#### {company_label} · Score: **{score_val}/100** ({rating_label}){sf_badge}"
                                     )
 
+                                    render_resource_badges_and_metrics(
+                                        row.to_dict()
+                                        if hasattr(row, "to_dict")
+                                        else dict(row)
+                                    )
+
                                     col_m1, col_m2, col_m3, col_m4 = st.columns(4)
-                                price_formatted = format_2_decimals(row.get("Price"))
-                                col_m1.metric(
-                                    "Current price",
-                                    f"{price_formatted} {row.get('Currency', '')}".strip(),
-                                )
-                                upside_raw = row.get("Target Upside (%)")
-                                upside_formatted = (
-                                    format_target_upside(upside_raw)
-                                    if pd.notna(upside_raw)
-                                    and upside_raw not in ("N/A", "")
-                                    else "-"
-                                )
-                                col_m2.metric(
-                                    "Target upside",
-                                    upside_formatted,
-                                    delta=upside_formatted
-                                    if upside_formatted != "-"
-                                    else None,
-                                )
-                                col_m3.metric(
-                                    "Valuation", str(row.get("Valuation", "N/A"))
-                                )
-                                col_m4.metric("Trend", str(row.get("Trend", "N/A")))
-
-                                strengths_text = str(
-                                    row.get("Key Strengths", "")
-                                ).strip()
-                                risks_text = str(row.get("Key Risks", "")).strip()
-
-                                d_col1, d_col2 = st.columns(2)
-                                with d_col1:
-                                    st.markdown(
-                                        "**:material/check_circle: Bullish catalysts & strengths:**"
+                                    price_formatted = format_2_decimals(
+                                        row.get("Price")
                                     )
-                                    if strengths_text:
-                                        for item in strengths_text.split("; "):
-                                            if item:
-                                                st.markdown(f"- {item}")
-                                    else:
-                                        st.caption("None flagged.")
-                                with d_col2:
-                                    st.markdown(
-                                        "**:material/warning: Risk factors & headwinds:**"
+                                    col_m1.metric(
+                                        "Current price",
+                                        f"{price_formatted} {row.get('Currency', '')}".strip(),
                                     )
-                                    if risks_text:
-                                        for item in risks_text.split("; "):
-                                            if item:
-                                                st.markdown(f"- {item}")
-                                    else:
-                                        st.caption("No major red flags identified.")
+                                    upside_raw = row.get("Target Upside (%)")
+                                    upside_formatted = (
+                                        format_target_upside(upside_raw)
+                                        if pd.notna(upside_raw)
+                                        and upside_raw not in ("N/A", "")
+                                        else "-"
+                                    )
+                                    col_m2.metric(
+                                        "Target upside",
+                                        upside_formatted,
+                                        delta=upside_formatted
+                                        if upside_formatted != "-"
+                                        else None,
+                                    )
+                                    col_m3.metric(
+                                        "Valuation", str(row.get("Valuation", "N/A"))
+                                    )
+                                    col_m4.metric("Trend", str(row.get("Trend", "N/A")))
+
+                                    strengths_text = str(
+                                        row.get("Key Strengths", "")
+                                    ).strip()
+                                    risks_text = str(row.get("Key Risks", "")).strip()
+
+                                    d_col1, d_col2 = st.columns(2)
+                                    with d_col1:
+                                        st.markdown(
+                                            "**:material/check_circle: Bullish catalysts & strengths:**"
+                                        )
+                                        if strengths_text:
+                                            for item in strengths_text.split("; "):
+                                                if item:
+                                                    st.markdown(f"- {item}")
+                                        else:
+                                            st.caption("None flagged.")
+                                    with d_col2:
+                                        st.markdown(
+                                            "**:material/warning: Risk factors & headwinds:**"
+                                        )
+                                        if risks_text:
+                                            for item in risks_text.split("; "):
+                                                if item:
+                                                    st.markdown(f"- {item}")
+                                        else:
+                                            st.caption("No major red flags identified.")
 
                                 with col_radar:
                                     sf_details = row.get("Snowflake Details")
@@ -1466,6 +1643,7 @@ def render_charts_tab():
         with st.container(border=True):
             col_kpis, col_radar = st.columns([1.7, 1.1], vertical_alignment="center")
             with col_kpis:
+                render_resource_badges_and_metrics(r)
                 m1, m2, m3, m4 = st.columns(4)
                 price_val = format_2_decimals(r.get("Price"))
                 curr = r.get("Currency", "")

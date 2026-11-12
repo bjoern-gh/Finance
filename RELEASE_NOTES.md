@@ -1,3 +1,52 @@
+# Release Notes — Version 1.8.0
+
+**Release Date:** November 12, 2026  
+**Build:** v1.8.0  
+**Test Suite:** 159 passing tests (`0.56s`)  
+**Code Quality:** 0 Ruff violations (Ruff 0.17+)  
+**Compatibility:** Python 3.11–3.13, Streamlit 1.31+ (optimized for 1.66+), FastAPI 0.108+  
+
+---
+
+## Executive Summary
+
+Version 1.8.0 introduces an advanced evaluation suite for raw materials, precious metals, miners, and exploration companies, alongside interactive Simply Wall St style Snowflake radar charts. It integrates Lassonde Curve lifecycle classification (Junior Explorers, Developers, Producers, and Royalty & Streaming), automatic primary commodity exposure detection (Gold, Silver, PGMs, Copper, Uranium, Lithium, etc.), and a cash runway and dilution risk engine tailored specifically for early-stage and pre-revenue resource companies.
+
+---
+
+## Key Highlights & Improvements
+
+### 1. Simply Wall St Style Snowflake Radar Chart
+- **Interactive Polar Visualization**: Added `build_snowflake_radar` to render 5-pillar polar charts (Value, Future Growth, Past Performance, Financial Health, Dividend Sustainability; 0–30 scale) with custom hover tooltips, theme-aware palette, and transparent background embedding.
+- **Embedded Dossier & Chart Integration**: Visualized directly within Opportunity Dossier cards and the single-stock fundamentals overview in the Charts tab.
+- **Progress Column**: Configured Streamlit `st.column_config.ProgressColumn` for Snowflake score in the main results table.
+
+### 2. Lassonde Curve Mining Lifecycle Classification
+- **Automated Lifecycle Staging**: Implemented `determine_mining_lifecycle` to classify resource companies along the classic Lassonde Curve:
+  - *Junior Explorer*: Discovery and drilling stage, pre-revenue, negative operating cash flows.
+  - *Developer*: Defined mineral resources, feasibility studies (PEA/PFS/DFS), permitting, and mine construction.
+  - *Producer*: Commercial extraction with significant revenue and positive operational cash flows.
+  - *Royalty & Streaming*: Capital providers receiving NSR or metal streams (60–80% cash margins).
+- **Recalibrated Snowflake Scoring**: Early-stage explorers are no longer unfairly penalized for lacking P/E multiples or dividends. Health evaluates Cash Runway and Net Cash backing; Value assesses Net Cash % of market cap and analyst target upside.
+
+### 3. Primary Commodity & Mineral Exposure Engine
+- **Resource Tagging**: Implemented `determine_primary_commodity` parsing industry, sector, name, and operational summaries to identify primary commodity exposure:
+  - *Precious Metals*: Gold ($\text{Au}$), Silver ($\text{Ag}$), PGMs (Platinum, Palladium).
+  - *Critical & Energy Transition*: Copper ($\text{Cu}$), Uranium ($\text{U}_3\text{O}_8$), Lithium ($\text{Li}$), Nickel ($\text{Ni}$), Cobalt ($\text{Co}$), Rare Earths ($\text{REE}$), Graphite.
+  - *Base & Industrial Metals*: Aluminum, Iron Ore, Zinc & Lead.
+  - *Bulks & Energy*: Coal, Potash, and Fertilizers.
+
+### 4. Cash Runway & Dilution Risk Engine
+- **Exploration Burn & Runway**: Implemented `calculate_cash_runway` calculating annual cash burn rate, cash runway (months), and Net Cash ($\text{Cash} - \text{Debt}$).
+- **Net Cash Backing %**: Calculates Net Cash as a percentage of Market Cap ($\frac{\text{Net Cash}}{\text{Market Cap}} \times 100\%$) to identify deep-value juniors trading near cash value.
+- **Automated Dilution Risk Flagging**: Classifies companies into *Low (Cash Flow +)*, *Low (> 36 mos)*, *Moderate (12–36 mos)*, and *High (< 12 mos)*. Injects automated `⚠️ High Dilution Risk` warnings into the composite Buy Score engine for companies facing imminent capital raises.
+
+### 5. Multi-Dimension Filtering & Visual Polish
+- **Advanced Resource Filters**: Added multi-select filters across Mining Lifecycle, Commodity / Mineral, Dilution Risk, and Business Model.
+- **Resource Badges**: Added Material Symbol status badges (`:material/terrain: Junior Explorer`, `:material/diamond: Gold`, `:material/warning: Dilution: High`, `:material/savings: Net Cash`) and a dedicated exploration KPI grid to Opportunity Dossiers and the Charts tab.
+
+---
+
 # Release Notes — Version 1.7.0
 
 **Release Date:** November 4, 2026  
