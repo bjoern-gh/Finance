@@ -29,6 +29,7 @@ except ImportError:
 import portfolio_manager as pm
 from financial_analyzer import (
     analyze_tickers,
+    get_financial_metrics,
     get_price_history,
     parse_and_convert_tickers,
 )
@@ -156,6 +157,12 @@ def get_price_history_cached(yahoo_symbol: str, period: str = "1y") -> pd.DataFr
     return get_price_history(yahoo_symbol, period)
 
 
+@st.cache_data(ttl=300, max_entries=100)
+def get_single_ticker_metrics_cached(yahoo_symbol: str) -> dict:
+    """Fetch and cache fundamental metrics and Snowflake scores for a single ticker."""
+    return get_financial_metrics((yahoo_symbol, yahoo_symbol))
+
+
 # ── Styling helpers ───────────────────────────────────────────────────────────
 
 TREND_COLORS = {
@@ -245,6 +252,16 @@ def get_column_config(df: pd.DataFrame) -> dict:
 
         if col == "Buy Score":
             config[col] = st.column_config.NumberColumn(format="%.0f")
+            continue
+
+        if col == "Snowflake Score":
+            config[col] = st.column_config.ProgressColumn(
+                "Snowflake",
+                help="Simply Wall St style 5-pillar score (0-30)",
+                format="%d/30",
+                min_value=0,
+                max_value=30,
+            )
             continue
 
         # Automatic detection for any other numeric column
@@ -503,6 +520,63 @@ def build_price_chart(
     return fig
 
 
+def build_snowflake_radar(
+    snowflake_dict: dict, company_name: str = ""
+) -> go.Figure | None:
+    """Build a Simply Wall St style 5-pillar radar chart (Value, Future, Past, Health, Dividend)."""
+    if not isinstance(snowflake_dict, dict) or not snowflake_dict:
+        return None
+
+    categories = ["Value", "Future", "Past", "Health", "Dividend"]
+    values = [float(snowflake_dict.get(cat, 0)) for cat in categories]
+    r_vals = values + [values[0]]
+    theta_vals = categories + [categories[0]]
+
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatterpolar(
+            r=r_vals,
+            theta=theta_vals,
+            fill="toself",
+            name=company_name or "Snowflake",
+            fillcolor="rgba(56, 189, 248, 0.32)",
+            line={"color": "#0284c7", "width": 2.5},
+            marker={"size": 7, "color": "#38bdf8"},
+            hovertemplate="%{theta}: <b>%{r:.0f}/6</b><extra></extra>",
+        )
+    )
+    fig.update_layout(
+        polar={
+            "bgcolor": "rgba(0,0,0,0)",
+            "radialaxis": {
+                "visible": True,
+                "range": [0, 6],
+                "tickmode": "linear",
+                "tick0": 0,
+                "dtick": 2,
+                "gridcolor": "rgba(148, 163, 184, 0.25)",
+                "linecolor": "rgba(148, 163, 184, 0.25)",
+                "tickfont": {"size": 9, "color": "#94a3b8"},
+            },
+            "angularaxis": {
+                "gridcolor": "rgba(148, 163, 184, 0.25)",
+                "linecolor": "rgba(148, 163, 184, 0.25)",
+                "tickfont": {
+                    "size": 11,
+                    "color": "#94a3b8",
+                    "family": "Inter, sans-serif",
+                },
+            },
+        },
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        margin={"l": 30, "r": 30, "t": 20, "b": 20},
+        showlegend=False,
+        height=260,
+    )
+    return fig
+
+
 # ── Import parser ─────────────────────────────────────────────────────────────
 
 
@@ -642,7 +716,15 @@ def render_sidebar():
 
     if st.session_state.creating_portfolio:
         new_name = st.sidebar.text_input("Portfolio name", key="new_portfolio_name")
-        if st.sidebar.button("Create portfolio", type="primary", width="stretch", key="confirm_create") and new_name.strip():
+        if (
+            st.sidebar.button(
+                "Create portfolio",
+                type="primary",
+                width="stretch",
+                key="confirm_create",
+            )
+            and new_name.strip()
+        ):
             pm.save_portfolio(new_name.strip(), [])
             st.session_state.current_portfolio = new_name.strip()
             st.session_state.creating_portfolio = False
@@ -652,7 +734,9 @@ def render_sidebar():
         rename_to = st.sidebar.text_input(
             "New name", value=st.session_state.current_portfolio, key="rename_input"
         )
-        if st.sidebar.button("Save name", type="primary", width="stretch", key="confirm_rename") and (
+        if st.sidebar.button(
+            "Save name", type="primary", width="stretch", key="confirm_rename"
+        ) and (
             rename_to.strip()
             and rename_to.strip() != st.session_state.current_portfolio
         ):
@@ -1017,6 +1101,7 @@ def render_analysis_results(
             "Yahoo Symbol",
             "Business Model",
             "Buy Score",
+            "Snowflake Score",
             "Opportunity Rating",
             "Target Upside (%)",
             "Recommendation",
@@ -1199,11 +1284,21 @@ def render_analysis_results(
                             score_val = row.get("Buy Score", "N/A")
 
                             with st.container(border=True):
-                                st.markdown(
-                                    f"#### {company_label} · Score: **{score_val}/100** ({rating_label})"
+                                col_info, col_radar = st.columns(
+                                    [1.7, 1.1], vertical_alignment="center"
                                 )
+                                with col_info:
+                                    sf_score = row.get("Snowflake Score")
+                                    sf_badge = (
+                                        f" · Snowflake: **{sf_score}/30**"
+                                        if pd.notna(sf_score)
+                                        else ""
+                                    )
+                                    st.markdown(
+                                        f"#### {company_label} · Score: **{score_val}/100** ({rating_label}){sf_badge}"
+                                    )
 
-                                col_m1, col_m2, col_m3, col_m4 = st.columns(4)
+                                    col_m1, col_m2, col_m3, col_m4 = st.columns(4)
                                 price_formatted = format_2_decimals(row.get("Price"))
                                 col_m1.metric(
                                     "Current price",
@@ -1219,12 +1314,18 @@ def render_analysis_results(
                                 col_m2.metric(
                                     "Target upside",
                                     upside_formatted,
-                                    delta=upside_formatted if upside_formatted != "-" else None,
+                                    delta=upside_formatted
+                                    if upside_formatted != "-"
+                                    else None,
                                 )
-                                col_m3.metric("Valuation", str(row.get("Valuation", "N/A")))
+                                col_m3.metric(
+                                    "Valuation", str(row.get("Valuation", "N/A"))
+                                )
                                 col_m4.metric("Trend", str(row.get("Trend", "N/A")))
 
-                                strengths_text = str(row.get("Key Strengths", "")).strip()
+                                strengths_text = str(
+                                    row.get("Key Strengths", "")
+                                ).strip()
                                 risks_text = str(row.get("Key Risks", "")).strip()
 
                                 d_col1, d_col2 = st.columns(2)
@@ -1248,6 +1349,23 @@ def render_analysis_results(
                                                 st.markdown(f"- {item}")
                                     else:
                                         st.caption("No major red flags identified.")
+
+                                with col_radar:
+                                    sf_details = row.get("Snowflake Details")
+                                    if isinstance(sf_details, dict) and sf_details:
+                                        radar_fig = build_snowflake_radar(
+                                            sf_details, row.get("Company", "")
+                                        )
+                                        if radar_fig:
+                                            st.plotly_chart(radar_fig, width="stretch")
+                                            st.caption(
+                                                f"**Snowflake: {sf_details.get('Total', 'N/A')}/30** · "
+                                                f"V:{sf_details.get('Value', 0)}/6 "
+                                                f"F:{sf_details.get('Future', 0)}/6 "
+                                                f"P:{sf_details.get('Past', 0)}/6 "
+                                                f"H:{sf_details.get('Health', 0)}/6 "
+                                                f"D:{sf_details.get('Dividend', 0)}/6"
+                                            )
             else:
                 st.info(
                     f"No stocks currently match the filter: **{selected_opp_view}**."
@@ -1333,12 +1451,21 @@ def render_charts_tab():
     yahoo_symbol = options[selected_label]
     company_name = selected_label.split("(")[0].strip()
 
-    # Show current metrics if analysis was run
+    # Show current metrics & Snowflake if available (or fetch single ticker)
+    r = None
     if df is not None and not df.empty and "Yahoo Symbol" in df.columns:
         row = df[df["Yahoo Symbol"] == yahoo_symbol]
         if not row.empty:
-            r = row.iloc[0]
-            with st.container(border=True):
+            r = row.iloc[0].to_dict()
+
+    if r is None:
+        with st.spinner(f"Loading {company_name} fundamentals..."):
+            r = get_single_ticker_metrics_cached(yahoo_symbol)
+
+    if r and r.get("Status") == "OK":
+        with st.container(border=True):
+            col_kpis, col_radar = st.columns([1.7, 1.1], vertical_alignment="center")
+            with col_kpis:
                 m1, m2, m3, m4 = st.columns(4)
                 price_val = format_2_decimals(r.get("Price"))
                 curr = r.get("Currency", "")
@@ -1366,6 +1493,21 @@ def render_charts_tab():
                 m7.metric("52W high", f"{w52_h}%" if w52_h != "N/A" else "N/A")
                 w52_l = format_2_decimals(r.get("52W Low (%)"))
                 m8.metric("52W low", f"{w52_l}%" if w52_l != "N/A" else "N/A")
+
+            with col_radar:
+                sf_details = r.get("Snowflake Details")
+                if isinstance(sf_details, dict) and sf_details:
+                    radar_fig = build_snowflake_radar(sf_details, company_name)
+                    if radar_fig:
+                        st.plotly_chart(radar_fig, width="stretch")
+                        st.caption(
+                            f"**Snowflake: {sf_details.get('Total', 'N/A')}/30** · "
+                            f"V:{sf_details.get('Value', 0)}/6 "
+                            f"F:{sf_details.get('Future', 0)}/6 "
+                            f"P:{sf_details.get('Past', 0)}/6 "
+                            f"H:{sf_details.get('Health', 0)}/6 "
+                            f"D:{sf_details.get('Dividend', 0)}/6"
+                        )
 
     with st.spinner("Loading chart..."):
         fig = build_price_chart(yahoo_symbol, company_name, period)

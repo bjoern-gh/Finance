@@ -1,6 +1,7 @@
 # IDE-specific files
 .idea/
 *.iml
+skills/
 
 # Python
 __pycache__/

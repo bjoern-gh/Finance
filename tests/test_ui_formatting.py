@@ -4,6 +4,7 @@ import pandas as pd
 
 from streamlit_app import (
     KNOWN_FLOAT_COLUMNS,
+    build_snowflake_radar,
     format_2_decimals,
     format_target_upside,
     get_column_config,
@@ -41,6 +42,7 @@ def test_get_column_config():
             "Company": ["Apple", "Microsoft"],
             "Price": [1.2, 123.4567],
             "Buy Score": [85, 60],
+            "Snowflake Score": [20, 15],
             "Target Upside (%)": [15.6, -3.2],
             "52W High (%)": [-5.12, -12.34],
             "Custom Float": [3.1415, 2.7182],
@@ -63,6 +65,10 @@ def test_get_column_config():
     # Integer columns -> %.0f
     assert cfg["Buy Score"]["type_config"]["format"] == "%.0f"
     assert cfg["Custom Int"]["type_config"]["format"] == "%.0f"
+
+    # Snowflake progress column
+    assert cfg["Snowflake Score"]["type_config"]["type"] == "progress"
+    assert cfg["Snowflake Score"]["type_config"]["max_value"] == 30
 
     # Non-numeric columns should not have number config
     assert "Company" not in cfg
@@ -103,3 +109,19 @@ def test_known_float_columns_all_configured():
     for col in KNOWN_FLOAT_COLUMNS:
         assert col in cfg
         assert cfg[col]["type_config"]["format"] == "%.2f"
+
+
+def test_build_snowflake_radar():
+    # Empty or invalid dictionary returns None
+    assert build_snowflake_radar({}) is None
+    assert build_snowflake_radar(None) is None
+
+    # Valid dictionary returns Plotly figure
+    sf = {"Value": 4, "Future": 5, "Past": 3, "Health": 6, "Dividend": 2, "Total": 20}
+    fig = build_snowflake_radar(sf, "TestCo")
+    assert fig is not None
+    assert len(fig.data) == 1
+    # Check 6 points (5 categories closed with 1st point)
+    assert len(fig.data[0].r) == 6
+    assert fig.data[0].r[0] == 4
+    assert fig.data[0].r[-1] == 4
